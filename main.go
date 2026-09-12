@@ -281,6 +281,43 @@ func rotas(g *Gerente, raiz string, encerrar func()) http.Handler {
 		responderJSON(w, http.StatusOK, map[string]any{"abrindo": true})
 	})
 
+	mux.HandleFunc("POST /api/docker/containers/{nome}/{acao}", func(w http.ResponseWriter, r *http.Request) {
+		nome, acao := r.PathValue("nome"), r.PathValue("acao")
+		saida, err := g.AcaoContainer(r.Context(), nome, acao)
+		if err != nil {
+			responderErro(w, http.StatusBadRequest, err)
+			return
+		}
+		responderJSON(w, http.StatusOK, map[string]any{"nome": nome, "acao": acao, "saida": saida})
+	})
+
+	// Rota com segmento literal: o mux do Go da preferencia a ela sobre o {acao} acima.
+	mux.HandleFunc("POST /api/docker/containers/{nome}/politica", func(w http.ResponseWriter, r *http.Request) {
+		var corpo struct {
+			Politica string `json:"politica"`
+		}
+		if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<16)).Decode(&corpo); err != nil {
+			responderErro(w, http.StatusBadRequest, err)
+			return
+		}
+		nome := r.PathValue("nome")
+		if err := g.PoliticaContainer(r.Context(), nome, corpo.Politica); err != nil {
+			responderErro(w, http.StatusBadRequest, err)
+			return
+		}
+		responderJSON(w, http.StatusOK, map[string]any{"nome": nome, "politica": corpo.Politica})
+	})
+
+	mux.HandleFunc("GET /api/docker/containers/{nome}/logs", func(w http.ResponseWriter, r *http.Request) {
+		linhas, _ := strconv.Atoi(r.URL.Query().Get("linhas"))
+		texto, err := g.LogsContainer(r.Context(), r.PathValue("nome"), linhas)
+		if err != nil {
+			responderErro(w, http.StatusBadRequest, err)
+			return
+		}
+		responderJSON(w, http.StatusOK, map[string]any{"nome": r.PathValue("nome"), "texto": texto})
+	})
+
 	mux.HandleFunc("POST /api/abrir", func(w http.ResponseWriter, r *http.Request) {
 		var corpo struct {
 			ID   string `json:"id"`

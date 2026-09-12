@@ -457,6 +457,48 @@ main {
   border-radius: 2px;
 }
 
+.containers li.de-fora { border-style: dashed; opacity: 0.85; }
+
+/* Politica de reinicio: discreta, mas sempre visivel - e ela que explica container
+   voltando sozinho quando o Docker Desktop abre. */
+.containers .politica {
+  padding: 0 2px;
+  font-family: var(--mono);
+  font-size: 9.5px;
+  color: var(--fraco);
+  background: none;
+  border: 1px solid var(--linha);
+  border-radius: 2px;
+  cursor: pointer;
+}
+.containers .politica:hover { color: var(--ambar); border-color: var(--ambar); }
+.containers .politica option { background: #0c1211; color: var(--texto); }
+.containers li.ativo { border-color: var(--ambar); }
+
+.separador-containers {
+  padding: 2px 0 0 !important;
+  font-size: 9.5px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--fraco);
+  background: none !important;
+  border: 0 !important;
+}
+
+/* As acoes so aparecem no hover: em repouso a lista fica limpa, e sao muitos containers. */
+.acoes-container {
+  display: flex;
+  gap: 3px;
+  margin-left: 4px;
+  opacity: 0;
+  transition: opacity 0.12s;
+}
+.containers li:hover .acoes-container,
+.containers li:focus-within .acoes-container { opacity: 1; }
+.acoes-container .mini { padding: 1px 6px; font-size: 10.5px; line-height: 1.4; }
+
+.painel-log .painel-topo .mini { padding: 0 5px; margin-left: 5px; font-size: 10px; }
+
 .plano { padding: 12px 13px; display: flex; flex-direction: column; gap: 10px; }
 
 .onda { display: grid; grid-template-columns: 54px minmax(0, 1fr); gap: 10px; align-items: start; }

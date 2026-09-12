@@ -183,14 +183,37 @@
           </div>
 
           <ul class="containers" v-if="docker.containers.length">
-            <li v-for="c in docker.containers" :key="c.nome">
-              <span class="led" :data-status="c.estado === 'running' ? 'pronto' : 'parado'" aria-hidden="true"></span>
-              <b>{{ c.nome }}</b>
-              <span class="portas" v-if="portasCurtas(c.portas)">{{ portasCurtas(c.portas) }}</span>
-              <span class="dica">{{ c.status }}</span>
-            </li>
+            <template v-for="(c, i) in docker.containers" :key="c.nome">
+              <li v-if="i === primeiroDeFora" class="separador-containers">
+                fora do config (rodando)
+              </li>
+              <li :class="{ 'de-fora': !c.do_config, ativo: logContainer === c.nome }">
+                <span class="led" :data-status="c.estado === 'running' ? 'pronto' : (c.estado === 'ausente' ? 'parado' : 'erro')" aria-hidden="true"></span>
+                <b :title="c.imagem">{{ c.nome }}</b>
+                <span class="portas" v-if="portasCurtas(c.portas)">{{ portasCurtas(c.portas) }}</span>
+                <span class="dica">{{ c.status }}</span>
+                <select v-if="c.estado !== 'ausente'" class="politica" :value="c.politica"
+                        :title="'reinicio automatico: ' + (c.politica || '?')"
+                        @change="trocarPolitica(c, $event.target.value)">
+                  <option value="no">no</option>
+                  <option value="always">always</option>
+                  <option value="unless-stopped">unless-stopped</option>
+                  <option value="on-failure">on-failure</option>
+                </select>
+                <span class="acoes-container" v-if="c.estado !== 'ausente'">
+                  <button v-if="c.estado !== 'running'" type="button" class="mini" title="iniciar"
+                          @click="acaoContainer(c, 'start')">▶</button>
+                  <button v-if="c.estado === 'running'" type="button" class="mini" title="reiniciar"
+                          @click="acaoContainer(c, 'restart')">↻</button>
+                  <button v-if="c.estado === 'running'" type="button" class="mini perigo" title="parar"
+                          @click="acaoContainer(c, 'stop')">■</button>
+                  <button type="button" class="mini" title="ver log do container"
+                          @click="mostrarLogContainer(c.nome)">log</button>
+                </span>
+              </li>
+            </template>
           </ul>
-          <p v-else-if="docker.rodando" class="dica">nenhum container do config criado ainda.</p>
+          <p v-else-if="docker.rodando" class="dica">nenhum container por aqui ainda.</p>
         </div>
       </section>
 
@@ -213,7 +236,13 @@
       <section class="painel painel-log">
         <header class="painel-topo">
           <h2>log</h2>
-          <span class="dica">{{ logAtual ? nomeDe(logAtual) : 'selecione um servico' }}</span>
+          <span class="dica">
+            <template v-if="logContainer">
+              container {{ logContainer }}
+              <button type="button" class="mini" title="atualizar" @click="mostrarLogContainer(logContainer)">↻</button>
+            </template>
+            <template v-else>{{ logAtual ? nomeDe(logAtual) : 'selecione um servico' }}</template>
+          </span>
         </header>
         <pre class="log" ref="log" tabindex="0"></pre>
       </section>

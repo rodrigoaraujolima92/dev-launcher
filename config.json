@@ -169,7 +169,7 @@
       "depende": [
         "db"
       ],
-      "selecionado": true
+      "selecionado": false
     },
     {
       "id": "backend",

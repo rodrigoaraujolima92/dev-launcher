@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"sort"
@@ -117,7 +118,10 @@ type dockerFake struct {
 	estado   EstadoDocker
 	erro     error
 	garantiu int
-	nomes    []string // ultimos nomes de container consultados
+	nomes    []string    // ultimos nomes de container consultados
+	acoes    [][2]string // {nome, acao} de cada chamada
+	erroAcao error
+	log      string
 }
 
 func (d *dockerFake) Estado(_ context.Context, nomes []string) EstadoDocker {
@@ -138,10 +142,54 @@ func (d *dockerFake) Garantir(_ context.Context, logar func(string)) error {
 	return err
 }
 
+func (d *dockerFake) Acao(_ context.Context, nome, acao string) (string, error) {
+	if err := validarContainer(nome, acao); err != nil {
+		return "", err
+	}
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	d.acoes = append(d.acoes, [2]string{nome, acao})
+	if d.erroAcao != nil {
+		return "", d.erroAcao
+	}
+	return nome, nil
+}
+
+func (d *dockerFake) Logs(_ context.Context, nome string, linhas int) (string, error) {
+	if err := validarContainer(nome, ""); err != nil {
+		return "", err
+	}
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	if d.log == "" {
+		return fmt.Sprintf("log de %s (%d linhas)", nome, linhas), nil
+	}
+	return d.log, nil
+}
+
+func (d *dockerFake) Politica(_ context.Context, nome, politica string) error {
+	if err := validarContainer(nome, ""); err != nil {
+		return err
+	}
+	if err := validarPolitica(politica); err != nil {
+		return err
+	}
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	d.acoes = append(d.acoes, [2]string{nome, "politica:" + politica})
+	return d.erroAcao
+}
+
 func (d *dockerFake) vezes() int {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	return d.garantiu
+}
+
+func (d *dockerFake) acoesFeitas() [][2]string {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	return append([][2]string{}, d.acoes...)
 }
 
 func gerenteTeste(t *testing.T, comp map[string]comportamento) (*Gerente, *execFake, *Config) {

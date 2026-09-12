@@ -34,28 +34,70 @@ func TestLerContainers(t *testing.T) {
 	}
 }
 
-func TestFiltrarContainersSegueOConfigEMarcaAusente(t *testing.T) {
-	todos := lerContainers(saidaDockerPS)
+func TestMontarListaPoeOConfigNaFrenteEDepoisOsDeFora(t *testing.T) {
+	// Alem dos tres do saidaDockerPS, um container de fora que esta rodando.
+	todos := lerContainers(saidaDockerPS + "grafana\trunning\tUp 5 minutes\t0.0.0.0:3000->3000/tcp\tgrafana/grafana\n")
 
-	// Ordem pedida diferente da ordem do docker ps, e um container que nunca foi criado.
-	got := filtrarContainers(todos, []string{"rabbitmq", "db", "mailhog"})
-	if len(got) != 3 {
-		t.Fatalf("esperava 3, veio %d", len(got))
+	got := montarLista(todos, []string{"rabbitmq", "db", "mailhog"})
+	if len(got) != 4 {
+		t.Fatalf("esperava 3 do config + 1 de fora, veio %d: %+v", len(got), got)
 	}
+	// Ordem do config primeiro, mesmo diferindo da ordem do docker ps.
 	if got[0].Nome != "rabbitmq" || got[1].Nome != "db" {
 		t.Fatalf("a ordem deveria seguir o config: %+v", got)
 	}
 	if got[2].Nome != "mailhog" || got[2].Estado != "ausente" {
 		t.Fatalf("container nao criado deveria aparecer como ausente: %+v", got[2])
 	}
-	// contrato-api existe na maquina mas nao esta no config: nao entra.
-	for _, c := range got {
-		if c.Nome == "contrato-api" {
-			t.Fatal("container de fora do config nao deveria aparecer")
+	for i := 0; i < 3; i++ {
+		if !got[i].DoConfig {
+			t.Fatalf("%s deveria estar marcado como do config", got[i].Nome)
 		}
 	}
-	if len(filtrarContainers(todos, nil)) != 0 {
-		t.Fatal("sem nomes no config, a lista e vazia")
+	if got[3].Nome != "grafana" || got[3].DoConfig {
+		t.Fatalf("o container de fora deveria vir por ultimo e sem a marca: %+v", got[3])
+	}
+	// contrato-api esta parado e nao e do config: fica de fora para a lista nao virar
+	// cemiterio de container velho.
+	for _, c := range got {
+		if c.Nome == "contrato-api" {
+			t.Fatal("container parado de fora do config nao deveria aparecer")
+		}
+	}
+}
+
+func TestMontarListaSemConfigMostraSoOsRodando(t *testing.T) {
+	got := montarLista(lerContainers(saidaDockerPS), nil)
+	if len(got) != 2 {
+		t.Fatalf("esperava so os 2 rodando, veio %+v", got)
+	}
+	for _, c := range got {
+		if c.Estado != "running" || c.DoConfig {
+			t.Fatalf("container inesperado: %+v", c)
+		}
+	}
+}
+
+func TestValidarContainer(t *testing.T) {
+	if err := validarContainer("db", "stop"); err != nil {
+		t.Fatalf("nome e acao validos: %v", err)
+	}
+	// Nome que comeca com "-" viraria flag do docker.
+	if err := validarContainer("--volumes", "stop"); err == nil {
+		t.Fatal("nome comecando com - deveria ser recusado")
+	}
+	if err := validarContainer("db meu", "stop"); err == nil {
+		t.Fatal("nome com espaco deveria ser recusado")
+	}
+	if err := validarContainer("", "stop"); err == nil {
+		t.Fatal("nome vazio deveria ser recusado")
+	}
+	// Acao fora da lista fechada.
+	if err := validarContainer("db", "rm"); err == nil {
+		t.Fatal("acao fora da lista deveria ser recusada")
+	}
+	if err := validarContainer("db", ""); err != nil {
+		t.Fatalf("acao vazia (caso do log) deveria passar: %v", err)
 	}
 }
 
@@ -210,6 +252,126 @@ func TestRotaAbrirDockerDisparaEmSegundoPlano(t *testing.T) {
 	}
 	if sonda.vezes() == 0 {
 		t.Fatal("a rota respondeu mas nao chamou a sonda")
+	}
+}
+
+func TestRotaDeAcaoNoContainer(t *testing.T) {
+	h, g := servidorTeste(t, nil)
+	sonda := g.docker.(*dockerFake)
+
+	resp := chamar(t, h, http.MethodPost, "/api/docker/containers/db/stop", "")
+	if resp.Code != http.StatusOK {
+		t.Fatalf("parar: %d %s", resp.Code, resp.Body)
+	}
+	if got := sonda.acoesFeitas(); len(got) != 1 || got[0] != [2]string{"db", "stop"} {
+		t.Fatalf("acoes = %v", got)
+	}
+
+	// Acao fora da lista e nome invalido nao chegam ao docker.
+	if resp := chamar(t, h, http.MethodPost, "/api/docker/containers/db/rm", ""); resp.Code != http.StatusBadRequest {
+		t.Fatalf("acao invalida deveria dar 400, veio %d", resp.Code)
+	}
+	if resp := chamar(t, h, http.MethodPost, "/api/docker/containers/--volumes/stop", ""); resp.Code != http.StatusBadRequest {
+		t.Fatalf("nome invalido deveria dar 400, veio %d", resp.Code)
+	}
+	if len(sonda.acoesFeitas()) != 1 {
+		t.Fatalf("nada invalido deveria ter chegado ao docker: %v", sonda.acoesFeitas())
+	}
+}
+
+func TestAcaoNoContainerRepublicaOEstado(t *testing.T) {
+	g, _, _ := gerenteTeste(t, nil)
+	inscricao, ch := g.Inscrever()
+	defer g.Desinscrever(inscricao)
+
+	if _, err := g.AcaoContainer(context.Background(), "db", "restart"); err != nil {
+		t.Fatalf("acao: %v", err)
+	}
+	// Sem republicar, a tela continuaria mostrando o status antigo depois de parar/reiniciar.
+	select {
+	case dados := <-ch:
+		var evento struct {
+			Tipo string `json:"tipo"`
+		}
+		if json.Unmarshal(dados, &evento); evento.Tipo != "docker" {
+			t.Fatalf("esperava evento de docker, veio %q", evento.Tipo)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("a tela nao foi avisada depois da acao")
+	}
+}
+
+func TestLerPoliticas(t *testing.T) {
+	saida := "/db\talways\n/rabbitmq\tunless-stopped\n/solto\t\n"
+
+	got := lerPoliticas(saida)
+	if got["db"] != "always" || got["rabbitmq"] != "unless-stopped" {
+		t.Fatalf("politicas = %v", got)
+	}
+	// Container criado sem policy nenhuma vira "no" - e o que o docker considera.
+	if got["solto"] != "no" {
+		t.Fatalf("policy vazia deveria virar 'no': %v", got)
+	}
+	if len(lerPoliticas("lixo sem tab")) != 0 {
+		t.Fatal("linha sem tabulacao deveria ser ignorada")
+	}
+}
+
+func TestValidarPolitica(t *testing.T) {
+	for _, boa := range []string{"no", "always", "unless-stopped", "on-failure"} {
+		if err := validarPolitica(boa); err != nil {
+			t.Fatalf("%q deveria ser aceita: %v", boa, err)
+		}
+	}
+	for _, ruim := range []string{"", "sim", "always;rm -rf", "on-failure:5"} {
+		if err := validarPolitica(ruim); err == nil {
+			t.Fatalf("%q deveria ser recusada", ruim)
+		}
+	}
+}
+
+func TestRotaDePoliticaDeRestart(t *testing.T) {
+	h, g := servidorTeste(t, nil)
+	sonda := g.docker.(*dockerFake)
+
+	resp := chamar(t, h, http.MethodPost, "/api/docker/containers/db/politica", `{"politica":"no"}`)
+	if resp.Code != http.StatusOK {
+		t.Fatalf("trocar politica: %d %s", resp.Code, resp.Body)
+	}
+	if got := sonda.acoesFeitas(); len(got) != 1 || got[0] != [2]string{"db", "politica:no"} {
+		t.Fatalf("acoes = %v", got)
+	}
+
+	if resp := chamar(t, h, http.MethodPost, "/api/docker/containers/db/politica", `{"politica":"talvez"}`); resp.Code != http.StatusBadRequest {
+		t.Fatalf("politica invalida deveria dar 400, veio %d", resp.Code)
+	}
+	// A rota literal /politica nao pode ser engolida pela rota generica /{acao}.
+	if len(sonda.acoesFeitas()) != 1 {
+		t.Fatalf("politica invalida nao deveria chegar ao docker: %v", sonda.acoesFeitas())
+	}
+}
+
+func TestRotaDeLogDoContainer(t *testing.T) {
+	h, g := servidorTeste(t, nil)
+	g.docker.(*dockerFake).log = "linha 1\nlinha 2"
+
+	resp := chamar(t, h, http.MethodGet, "/api/docker/containers/db/logs?linhas=50", "")
+	if resp.Code != http.StatusOK {
+		t.Fatalf("logs: %d %s", resp.Code, resp.Body)
+	}
+	var corpo struct {
+		Nome  string `json:"nome"`
+		Texto string `json:"texto"`
+	}
+	if err := json.Unmarshal(resp.Body.Bytes(), &corpo); err != nil {
+		t.Fatal(err)
+	}
+	if corpo.Nome != "db" || !strings.Contains(corpo.Texto, "linha 2") {
+		t.Fatalf("corpo = %+v", corpo)
+	}
+
+	if resp := chamar(t, h, http.MethodGet, "/api/docker/containers/-f/logs", ""); resp.Code != http.StatusBadRequest {
+		t.Fatalf("nome invalido deveria dar 400, veio %d", resp.Code)
 	}
 }
 

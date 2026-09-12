@@ -44,9 +44,19 @@ despejar o erro de bind.
 
 ## Docker
 
-O painel **docker** na lateral mostra o estado do engine, a versao e os containers do
-config - nome, portas e status - inclusive os que ainda nao foram criados ("ausente").
-Container de outro projeto que esteja na maquina nao aparece ali.
+O painel **docker** na lateral mostra o estado do engine, a versao e a lista de containers:
+primeiro os do config (nome, portas, status, e "ausente" para o que nunca foi criado),
+depois, sob o separador *fora do config*, os que estao **rodando** na maquina sem pertencer
+a nenhum projeto do launcher. Container parado de fora do config nao aparece - senao a
+lista viraria cemiterio de container velho.
+
+Cada container tem, ao passar o mouse: **▶ iniciar**, **↻ reiniciar**, **■ parar** e
+**log** (ultimas 300 linhas no painel de log, com botao de atualizar). As acoes aceitas sao
+so start/stop/restart, e o nome passa por validacao antes de virar argumento do docker.
+
+O seletor ao lado do nome e a **restart policy** (`docker update --restart=...`): `no`,
+`always`, `unless-stopped` e `on-failure`. E o que explica - e resolve - container voltando
+sozinho toda vez que o Docker Desktop abre.
 
 Com o engine parado, o painel fica vermelho e oferece **abrir Docker Desktop**: o launcher
 acha o executavel (`%ProgramFiles%\Docker\Docker\Docker Desktop.exe` e os outros caminhos
@@ -179,8 +189,11 @@ Config da primeira versao (sem `grupos`/`perfis`) e migrado sozinho ao abrir.
 | POST/DELETE | `/api/servicos` · `/api/servicos/{id}` | cadastro completo |
 | POST | `/api/servicos/{id}/mover` | `{"grupo": "...", "antes": "id ou vazio"}` (arrastar e soltar) |
 | POST | `/api/abrir` | `{"id": "...", "alvo": "pasta\|editor"}` |
-| GET | `/api/docker` | estado do engine + containers do config |
+| GET | `/api/docker` | estado do engine + containers (do config e os de fora rodando) |
 | POST | `/api/docker/abrir` | abre o Docker Desktop e espera o engine (responde na hora) |
+| POST | `/api/docker/containers/{nome}/{start\|stop\|restart}` | acao no container |
+| POST | `/api/docker/containers/{nome}/politica` | `{"politica": "no\|always\|unless-stopped\|on-failure"}` |
+| GET | `/api/docker/containers/{nome}/logs?linhas=300` | ultimas linhas do container |
 | POST | `/api/encerrar` | encerra o proprio launcher |
 | POST/DELETE | `/api/grupos` · `/api/grupos/ordem` · `/api/grupos/{id}` | grupos |
 | POST/DELETE | `/api/perfis` · `/api/perfis/{id}/aplicar` · `/api/perfis/{id}` | perfis |

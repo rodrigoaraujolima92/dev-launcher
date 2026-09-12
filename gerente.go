@@ -582,6 +582,35 @@ func (g *Gerente) PublicarDocker(ctx context.Context) EstadoDocker {
 	return estado
 }
 
+// AcaoContainer roda start/stop/restart num container e ja republica o estado, para a tela
+// nao ficar mostrando "Up 2 hours" logo depois de parar.
+func (g *Gerente) AcaoContainer(ctx context.Context, nome, acao string) (string, error) {
+	if g.docker == nil {
+		return "", errors.New("sonda do docker indisponivel")
+	}
+	saida, err := g.docker.Acao(ctx, nome, acao)
+	g.PublicarDocker(ctx)
+	return saida, err
+}
+
+// PoliticaContainer troca a restart policy (docker update --restart=...). E o que resolve
+// container voltando sozinho toda vez que o Docker Desktop abre.
+func (g *Gerente) PoliticaContainer(ctx context.Context, nome, politica string) error {
+	if g.docker == nil {
+		return errors.New("sonda do docker indisponivel")
+	}
+	err := g.docker.Politica(ctx, nome, politica)
+	g.PublicarDocker(ctx)
+	return err
+}
+
+func (g *Gerente) LogsContainer(ctx context.Context, nome string, linhas int) (string, error) {
+	if g.docker == nil {
+		return "", errors.New("sonda do docker indisponivel")
+	}
+	return g.docker.Logs(ctx, nome, linhas)
+}
+
 // AbrirDocker sobe o Docker Desktop a pedido da tela, com o andamento indo para os avisos.
 func (g *Gerente) AbrirDocker(ctx context.Context) error {
 	if g.docker == nil {

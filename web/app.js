@@ -31,6 +31,7 @@ createApp({
       estados: {},
       plano: {},
       logAtual: null,
+      logContainer: null,
       depAberta: null,
       menuAberto: null,
       avisos: [],
@@ -65,11 +66,19 @@ createApp({
     topo() {
       return this.modais[this.modais.length - 1] || {};
     },
+    // Indice do primeiro container que nao esta no config - e onde entra o separador
+    // "fora do config" na lista.
+    primeiroDeFora() {
+      return this.docker.containers.findIndex((c) => !c.do_config);
+    },
     textoDocker() {
       if (this.docker.iniciando) return "abrindo o Docker Desktop...";
       if (!this.docker.rodando) return this.docker.mensagem || "engine parado";
-      const noAr = this.docker.containers.filter((c) => c.estado === "running").length;
-      return `${noAr} de ${this.docker.containers.length} containers no ar`;
+      const doConfig = this.docker.containers.filter((c) => c.do_config);
+      const noAr = doConfig.filter((c) => c.estado === "running").length;
+      const fora = this.docker.containers.length - doConfig.length;
+      const base = `${noAr} de ${doConfig.length} no ar`;
+      return fora ? `${base} · ${fora} fora do config` : base;
     },
     tituloModal() {
       const t = this.topo;
@@ -198,6 +207,45 @@ createApp({
         this.docker = await this.pedir("/api/docker");
       } catch (err) {
         this.docker = { rodando: false, iniciando: false, containers: [], mensagem: err.message };
+      }
+    },
+
+    async acaoContainer(c, acao) {
+      const rotulos = { start: "iniciando", stop: "parando", restart: "reiniciando" };
+      this.avisar(`${rotulos[acao]} ${c.nome}...`);
+      try {
+        await this.enviar(`/api/docker/containers/${encodeURIComponent(c.nome)}/${acao}`);
+        await this.atualizarDocker();
+        this.avisar(`${c.nome}: ${acao} ok.`, "ok");
+      } catch (err) {
+        this.avisar(`${c.nome}: ${err.message}`, "erro");
+      }
+    },
+
+    async trocarPolitica(c, politica) {
+      const anterior = c.politica;
+      try {
+        await this.enviar(`/api/docker/containers/${encodeURIComponent(c.nome)}/politica`, { politica });
+        await this.atualizarDocker();
+        this.avisar(`${c.nome}: reinicio automatico agora e "${politica}".`, "ok");
+      } catch (err) {
+        c.politica = anterior; // o select ja mudou na tela; volta ao que o docker tem
+        this.avisar(`${c.nome}: ${err.message}`, "erro");
+      }
+    },
+
+    async mostrarLogContainer(nome) {
+      this.logAtual = null;
+      this.logContainer = nome;
+      const alvo = this.$refs.log;
+      alvo.textContent = "";
+      try {
+        const r = await this.pedir(`/api/docker/containers/${encodeURIComponent(nome)}/logs?linhas=300`);
+        const linhas = (r.texto || "").split("\n");
+        if (!r.texto) this.acrescentarLog("(container sem log)");
+        else linhas.forEach((l) => this.acrescentarLog(l));
+      } catch (err) {
+        this.acrescentarLog("nao consegui ler o log: " + err.message);
       }
     },
 
@@ -656,6 +704,7 @@ createApp({
     // ------------------------------------------------------------------
     async mostrarLog(id) {
       this.logAtual = id;
+      this.logContainer = null;
       const alvo = this.$refs.log;
       alvo.textContent = "";
       try {
