@@ -1,6 +1,43 @@
 {
   "porta_ui": 7010,
   "rede_docker": "PRODUCTION",
+  "raiz_navegacao": "C:\\Users\\Pichau\\projetos",
+  "grupos": [
+    {
+      "id": "infra",
+      "nome": "DOCKER"
+    },
+    {
+      "id": "api",
+      "nome": "APPDATURMA-SERVICES"
+    },
+    {
+      "id": "web",
+      "nome": "APPDATURMA-FRONTENDS"
+    },
+    {
+      "id": "photonow",
+      "nome": "PHOTONOW"
+    }
+  ],
+  "perfis": [
+    {
+      "id": "appdaturma",
+      "nome": "APPDATURMA",
+      "servicos": [
+        "db",
+        "rabbitmq",
+        "mailhog",
+        "adminer",
+        "permissions",
+        "contrato",
+        "backend",
+        "frontend",
+        "admin"
+      ]
+    }
+  ],
+  "perfil_ativo": "appdaturma",
   "servicos": [
     {
       "id": "db",
@@ -28,7 +65,7 @@
       },
       "timeout": 120,
       "depende": [],
-      "selecionado": true
+      "selecionado": false
     },
     {
       "id": "rabbitmq",
@@ -49,7 +86,7 @@
       },
       "timeout": 120,
       "depende": [],
-      "selecionado": true
+      "selecionado": false
     },
     {
       "id": "mailhog",
@@ -70,7 +107,7 @@
       },
       "timeout": 60,
       "depende": [],
-      "selecionado": true
+      "selecionado": false
     },
     {
       "id": "adminer",
@@ -93,7 +130,7 @@
       "depende": [
         "db"
       ],
-      "selecionado": true
+      "selecionado": false
     },
     {
       "id": "permissions",
@@ -113,7 +150,7 @@
         "db",
         "rabbitmq"
       ],
-      "selecionado": true
+      "selecionado": false
     },
     {
       "id": "contrato",
@@ -156,7 +193,7 @@
         "permissions",
         "rabbitmq"
       ],
-      "selecionado": true
+      "selecionado": false
     },
     {
       "id": "frontend",
@@ -176,7 +213,7 @@
       "depende": [
         "backend"
       ],
-      "selecionado": true
+      "selecionado": false
     },
     {
       "id": "admin",
@@ -196,6 +233,24 @@
       "depende": [
         "backend"
       ],
+      "selecionado": false
+    },
+    {
+      "id": "cabine-foto-front",
+      "nome": "cabine-foto-front",
+      "grupo": "photonow",
+      "tipo": "app",
+      "dir": "C:\\Users\\Pichau\\projetos\\photonow\\cabine-foto-front",
+      "cmd": "npm run serve",
+      "porta": 8080,
+      "url": "http://localhost:8080",
+      "pronto": {
+        "tipo": "porta",
+        "porta": 8080
+      },
+      "timeout": 120,
+      "modo": "gerenciado",
+      "depende": [],
       "selecionado": false
     }
   ]
