@@ -1,0 +1,202 @@
+{
+  "porta_ui": 7010,
+  "rede_docker": "PRODUCTION",
+  "servicos": [
+    {
+      "id": "db",
+      "nome": "Postgres",
+      "grupo": "infra",
+      "tipo": "docker",
+      "compose": {
+        "projeto": "dockerappdaturma",
+        "arquivo": "docker appdaturma/docker-compose.yml",
+        "servico": "db"
+      },
+      "container": "db",
+      "porta": 5432,
+      "pronto": {
+        "tipo": "comando",
+        "cmd": [
+          "docker",
+          "exec",
+          "db",
+          "pg_isready",
+          "-U",
+          "postgres",
+          "-q"
+        ]
+      },
+      "timeout": 120,
+      "depende": [],
+      "selecionado": true
+    },
+    {
+      "id": "rabbitmq",
+      "nome": "RabbitMQ",
+      "grupo": "infra",
+      "tipo": "docker",
+      "compose": {
+        "projeto": "dockerappdaturma",
+        "arquivo": "docker appdaturma/docker-compose-rabbit.yml",
+        "servico": "rabbitmq"
+      },
+      "container": "rabbitmq",
+      "porta": 5672,
+      "url": "http://localhost:15672",
+      "pronto": {
+        "tipo": "porta",
+        "porta": 5672
+      },
+      "timeout": 120,
+      "depende": [],
+      "selecionado": true
+    },
+    {
+      "id": "mailhog",
+      "nome": "MailHog",
+      "grupo": "infra",
+      "tipo": "docker",
+      "compose": {
+        "projeto": "projetos",
+        "arquivo": "../mailhog.yml",
+        "servico": "mailhog"
+      },
+      "container": "projetos-mailhog-1",
+      "porta": 1025,
+      "url": "http://localhost:8025",
+      "pronto": {
+        "tipo": "porta",
+        "porta": 1025
+      },
+      "timeout": 60,
+      "depende": [],
+      "selecionado": true
+    },
+    {
+      "id": "adminer",
+      "nome": "Adminer",
+      "grupo": "infra",
+      "tipo": "docker",
+      "compose": {
+        "projeto": "dockerappdaturma",
+        "arquivo": "docker appdaturma/docker-compose.yml",
+        "servico": "adminer"
+      },
+      "container": "dockerappdaturma-adminer-1",
+      "porta": 7002,
+      "url": "http://localhost:7002",
+      "pronto": {
+        "tipo": "porta",
+        "porta": 7002
+      },
+      "timeout": 60,
+      "depende": [
+        "db"
+      ],
+      "selecionado": true
+    },
+    {
+      "id": "permissions",
+      "nome": "permissions-api",
+      "grupo": "api",
+      "tipo": "app",
+      "dir": "permissions-api",
+      "cmd": "go run ./cmd/api",
+      "porta": 7019,
+      "pronto": {
+        "tipo": "porta",
+        "porta": 7019
+      },
+      "timeout": 180,
+      "modo": "gerenciado",
+      "depende": [
+        "db",
+        "rabbitmq"
+      ],
+      "selecionado": true
+    },
+    {
+      "id": "contrato",
+      "nome": "contrato-api",
+      "grupo": "api",
+      "tipo": "app",
+      "dir": "contrato-api",
+      "cmd": "if (Get-Command air -ErrorAction SilentlyContinue) { air } else { go run ./cmd/api }",
+      "porta": 8083,
+      "pronto": {
+        "tipo": "porta",
+        "porta": 8083
+      },
+      "timeout": 180,
+      "modo": "gerenciado",
+      "depende": [
+        "db"
+      ],
+      "selecionado": false
+    },
+    {
+      "id": "backend",
+      "nome": "appdaturma-backend",
+      "grupo": "api",
+      "tipo": "app",
+      "dir": "appdaturma-backend",
+      "cmd": "\u0026 './run-local.ps1'",
+      "porta": 7003,
+      "url": "http://localhost:7003",
+      "pronto": {
+        "tipo": "porta",
+        "porta": 7003
+      },
+      "timeout": 300,
+      "modo": "gerenciado",
+      "depende": [
+        "contrato",
+        "db",
+        "mailhog",
+        "permissions",
+        "rabbitmq"
+      ],
+      "selecionado": true
+    },
+    {
+      "id": "frontend",
+      "nome": "appdaturma-frontend",
+      "grupo": "web",
+      "tipo": "app",
+      "dir": "appdaturma-frontend",
+      "cmd": "npm run serve -- --port 8080",
+      "porta": 8080,
+      "url": "http://localhost:8080",
+      "pronto": {
+        "tipo": "porta",
+        "porta": 8080
+      },
+      "timeout": 240,
+      "modo": "gerenciado",
+      "depende": [
+        "backend"
+      ],
+      "selecionado": true
+    },
+    {
+      "id": "admin",
+      "nome": "appdaturma-admin",
+      "grupo": "web",
+      "tipo": "app",
+      "dir": "appdaturma-admin",
+      "cmd": "npm run serve -- --port 8081",
+      "porta": 8081,
+      "url": "http://localhost:8081",
+      "pronto": {
+        "tipo": "porta",
+        "porta": 8081
+      },
+      "timeout": 240,
+      "modo": "gerenciado",
+      "depende": [
+        "backend"
+      ],
+      "selecionado": false
+    }
+  ]
+}

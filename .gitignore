@@ -1,0 +1,10 @@
+# Binario compilado (o start-ui.ps1 recompila quando precisa)
+dev-launcher.exe
+*.exe
+
+# Saidas de execucao
+*.log
+tmp/
+
+# Sobra de escrita atomica do config (salvarConfig grava .tmp e renomeia)
+config.json.tmp

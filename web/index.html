@@ -1,0 +1,103 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>dev launcher · appdaturma</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="textura" aria-hidden="true"></div>
+
+<header class="topo">
+  <div class="marca">
+    <span class="sigla" aria-hidden="true">ADT</span>
+    <div class="titulo">
+      <h1>dev launcher</h1>
+      <p id="subtitulo">controle de subida do ambiente local</p>
+    </div>
+  </div>
+
+  <div class="medidores" id="medidores"></div>
+
+  <div class="acoes-topo">
+    <button class="botao" id="btn-parar" type="button">parar selecionados</button>
+    <button class="botao primario" id="btn-subir" type="button" aria-label="subir servicos selecionados">
+      <span class="rotulo">subir selecionados</span>
+      <span class="contador" id="contador-subir">0</span>
+    </button>
+  </div>
+</header>
+
+<main>
+  <section class="coluna" id="servicos" aria-label="servicos"></section>
+
+  <aside class="lateral">
+    <section class="painel" aria-labelledby="tit-plano">
+      <header class="painel-topo">
+        <h2 id="tit-plano">plano de subida</h2>
+        <span class="dica">quem espera quem</span>
+      </header>
+      <div id="plano" class="plano"></div>
+    </section>
+
+    <section class="painel painel-log" aria-labelledby="tit-log">
+      <header class="painel-topo">
+        <h2 id="tit-log">log</h2>
+        <span class="dica" id="log-alvo">selecione um servico</span>
+      </header>
+      <pre id="log" class="log" tabindex="0"></pre>
+    </section>
+  </aside>
+</main>
+
+<div class="avisos" id="avisos" role="status" aria-live="polite"></div>
+
+<template id="modelo-servico">
+  <article class="cartao" data-id="">
+    <label class="marcador">
+      <input type="checkbox" class="chk-selecao">
+      <span class="caixa" aria-hidden="true"></span>
+    </label>
+
+    <div class="corpo">
+      <div class="linha-titulo">
+        <span class="led" data-status="parado" aria-hidden="true"></span>
+        <h3 class="nome"></h3>
+        <span class="etiqueta porta"></span>
+        <span class="estado-texto"></span>
+      </div>
+
+      <p class="detalhe"></p>
+
+      <div class="dependencias">
+        <span class="rotulo-dep">espera</span>
+        <div class="chips"></div>
+        <details class="editor-dep">
+          <summary title="editar dependencias">editar</summary>
+          <div class="opcoes-dep"></div>
+        </details>
+      </div>
+    </div>
+
+    <div class="controles">
+      <div class="modo" role="group" aria-label="modo de execucao">
+        <button type="button" class="modo-opcao" data-modo="gerenciado">log aqui</button>
+        <button type="button" class="modo-opcao" data-modo="terminal">aba do wt</button>
+      </div>
+      <div class="botoes">
+        <a class="link-url" target="_blank" rel="noopener" hidden>abrir</a>
+        <button type="button" class="mini acao-log">log</button>
+        <button type="button" class="mini acao-subir">subir</button>
+        <button type="button" class="mini perigo acao-parar">parar</button>
+      </div>
+    </div>
+  </article>
+</template>
+
+<script src="app.js"></script>
+</body>
+</html>
