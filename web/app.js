@@ -41,6 +41,7 @@ createApp({
       arraste: { id: null, grupo: null, antes: null },
       salvandoEm: null,
       encerrado: false,
+      docker: { rodando: false, iniciando: false, containers: [], mensagem: "verificando..." },
     };
   },
 
@@ -64,6 +65,12 @@ createApp({
     topo() {
       return this.modais[this.modais.length - 1] || {};
     },
+    textoDocker() {
+      if (this.docker.iniciando) return "abrindo o Docker Desktop...";
+      if (!this.docker.rodando) return this.docker.mensagem || "engine parado";
+      const noAr = this.docker.containers.filter((c) => c.estado === "running").length;
+      return `${noAr} de ${this.docker.containers.length} containers no ar`;
+    },
     tituloModal() {
       const t = this.topo;
       if (t.tipo === "servico") return this.form.id ? `editar · ${this.form.nome}` : "novo projeto";
@@ -85,6 +92,9 @@ createApp({
       return this.avisar("nao consegui falar com o launcher: " + err.message, "erro");
     }
     this.atualizarPlano();
+    // O docker vem depois do primeiro desenho: com o engine parado a checagem demora
+    // alguns segundos, e nao da para segurar a tela por causa disso.
+    this.atualizarDocker();
     this.conectarEventos();
     document.addEventListener("keydown", (ev) => {
       if (ev.key === "Escape" && this.modais.length) this.fecharTopo();
@@ -178,6 +188,35 @@ createApp({
       } catch (err) {
         this.avisar(err.message, "erro");
       }
+    },
+
+    // ------------------------------------------------------------------
+    // docker
+    // ------------------------------------------------------------------
+    async atualizarDocker() {
+      try {
+        this.docker = await this.pedir("/api/docker");
+      } catch (err) {
+        this.docker = { rodando: false, iniciando: false, containers: [], mensagem: err.message };
+      }
+    },
+
+    async abrirDocker() {
+      this.docker.iniciando = true;
+      try {
+        await this.enviar("/api/docker/abrir");
+        this.avisar("abrindo o Docker Desktop - isso pode levar um minuto.", "ok");
+      } catch (err) {
+        this.docker.iniciando = false;
+        this.avisar(err.message, "erro");
+      }
+    },
+
+    // portasCurtas troca "0.0.0.0:5432->5432/tcp, [::]:5432->5432/tcp" por "5432".
+    portasCurtas(portas) {
+      if (!portas) return "";
+      const achadas = [...portas.matchAll(/:(\d+)->/g)].map((m) => m[1]);
+      return [...new Set(achadas)].join(" ");
     },
 
     async encerrarLauncher() {
@@ -600,6 +639,10 @@ createApp({
           if (evento.id === this.logAtual) this.acrescentarLog(evento.linha);
         } else if (evento.tipo === "config") {
           this.config = evento.config;
+        } else if (evento.tipo === "docker") {
+          this.docker = evento.docker;
+        } else if (evento.tipo === "aviso") {
+          this.avisar(evento.texto, evento.erro ? "erro" : "");
         } else if (evento.tipo === "fim") {
           this.avisar("subida encerrada.", "ok");
           this.atualizarPlano();

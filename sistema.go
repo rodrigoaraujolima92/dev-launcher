@@ -7,6 +7,7 @@ import (
 	"net"
 	"net/http"
 	"os/exec"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -145,19 +146,31 @@ func matarArvore(ctx context.Context, pid int) error {
 	return err
 }
 
+// abrirPrograma dispara um executavel e devolve na hora - nao espera ele terminar.
+//
+// exec.Command, e nao CommandContext, de proposito: o CommandContext MATA o processo quando
+// o contexto acaba. Com ele, o Docker Desktop morria assim que a requisicao terminava (ou
+// quando a espera pelo engine estourava), e a tela ficava esperando um engine que tinha
+// acabado de ser derrubado pelo proprio launcher.
+func abrirPrograma(caminho string) error {
+	cmd := exec.Command(caminho)
+	cmd.Dir = filepath.Dir(caminho)
+	return cmd.Start()
+}
+
 // abrirNoSistema abre a pasta do projeto no Explorer ou no VS Code. O caminho vem sempre do
 // config (resolvido pelo Gerente), nunca direto do navegador.
-func abrirNoSistema(ctx context.Context, caminho, alvo string) error {
+// Tambem sem contexto: o VS Code precisa continuar aberto depois da resposta HTTP.
+func abrirNoSistema(caminho, alvo string) error {
 	switch alvo {
 	case "editor":
 		if !comandoExiste("code") {
 			return fmt.Errorf("o comando 'code' (VS Code) nao esta no PATH")
 		}
-		// O 'code' no Windows e um .cmd que devolve na hora; nao segura o processo.
-		return exec.CommandContext(ctx, "code", caminho).Start()
+		return exec.Command("code", caminho).Start()
 	case "pasta", "":
 		// O explorer devolve codigo 1 mesmo quando abre a janela: Start() e o suficiente.
-		return exec.CommandContext(ctx, "explorer", caminho).Start()
+		return exec.Command("explorer", caminho).Start()
 	default:
 		return fmt.Errorf("alvo desconhecido: %s", alvo)
 	}

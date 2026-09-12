@@ -15,8 +15,9 @@ import (
 
 // ExecutorSO e a implementacao real: docker compose para a infra e pwsh para as apps.
 type ExecutorSO struct {
-	raiz string
-	rede string
+	raiz   string
+	rede   string
+	docker SondaDocker
 
 	aoLogar   func(id, linha string)
 	aoTerPID  func(id string, pid int)
@@ -26,10 +27,11 @@ type ExecutorSO struct {
 	procs map[string]*exec.Cmd
 }
 
-func NovoExecutorSO(raiz, rede string) *ExecutorSO {
+func NovoExecutorSO(raiz, rede string, docker SondaDocker) *ExecutorSO {
 	return &ExecutorSO{
 		raiz:      raiz,
 		rede:      rede,
+		docker:    docker,
 		procs:     map[string]*exec.Cmd{},
 		aoLogar:   func(string, string) {},
 		aoTerPID:  func(string, int) {},
@@ -70,7 +72,9 @@ func (e *ExecutorSO) Iniciar(ctx context.Context, s *Servico) error {
 }
 
 func (e *ExecutorSO) iniciarDocker(ctx context.Context, s *Servico) error {
-	if err := dockerDisponivel(ctx); err != nil {
+	// Engine parado nao e mais motivo de erro: abre o Docker Desktop e espera. So acontece
+	// quando a subida inclui algum projeto docker - quem sobe so front-end nao paga isso.
+	if err := e.docker.Garantir(ctx, func(linha string) { e.logar(s.ID, "%s", linha) }); err != nil {
 		return err
 	}
 	if err := garantirRede(ctx, e.rede); err != nil {

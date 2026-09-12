@@ -69,8 +69,9 @@ func main() {
 		return
 	}
 
-	exe := NovoExecutorSO(raiz, cfg.RedeDocker)
-	g := NovoGerente(raiz, cfgPath, cfg, exe)
+	sonda := NovaSondaDockerSO()
+	exe := NovoExecutorSO(raiz, cfg.RedeDocker, sonda)
+	g := NovoGerente(raiz, cfgPath, cfg, exe, sonda)
 	exe.aoLogar = g.RegistrarLog
 	exe.aoTerPID = func(id string, pid int) { g.definirPID(id, pid) }
 	exe.aoEncerra = func(id, mensagem string) {
@@ -263,6 +264,23 @@ func rotas(g *Gerente, raiz string, encerrar func()) http.Handler {
 		responderJSON(w, http.StatusOK, map[string]any{"config": g.Config()})
 	})
 
+	mux.HandleFunc("GET /api/docker", func(w http.ResponseWriter, r *http.Request) {
+		responderJSON(w, http.StatusOK, g.EstadoDocker(r.Context()))
+	})
+
+	mux.HandleFunc("POST /api/docker/abrir", func(w http.ResponseWriter, r *http.Request) {
+		// Abrir o Docker Desktop e esperar o engine pode passar de um minuto: roda em
+		// segundo plano e a tela acompanha pelos eventos.
+		go func() {
+			ctx, cancelar := context.WithTimeout(context.Background(), 5*time.Minute)
+			defer cancelar()
+			if err := g.AbrirDocker(ctx); err != nil {
+				g.emitir(map[string]any{"tipo": "aviso", "texto": err.Error(), "erro": true})
+			}
+		}()
+		responderJSON(w, http.StatusOK, map[string]any{"abrindo": true})
+	})
+
 	mux.HandleFunc("POST /api/abrir", func(w http.ResponseWriter, r *http.Request) {
 		var corpo struct {
 			ID   string `json:"id"`
@@ -277,7 +295,7 @@ func rotas(g *Gerente, raiz string, encerrar func()) http.Handler {
 			responderErro(w, http.StatusBadRequest, err)
 			return
 		}
-		if err := abrirNoSistema(r.Context(), caminho, corpo.Alvo); err != nil {
+		if err := abrirNoSistema(caminho, corpo.Alvo); err != nil {
 			responderErro(w, http.StatusBadRequest, err)
 			return
 		}

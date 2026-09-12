@@ -61,25 +61,28 @@ type tarefa struct {
 }
 
 type Gerente struct {
-	mu         sync.Mutex
-	raiz       string
-	caminhoCfg string
-	cfg        *Config
-	exec       Executor
-	estados    map[string]*Estado
-	logs       map[string]*anel
-	inscritos  map[int]chan []byte
-	proxID     int
-	intervalo  time.Duration // de quanto em quanto tempo repete a checagem de "pronto"
-	subindo    bool
+	mu           sync.Mutex
+	raiz         string
+	caminhoCfg   string
+	cfg          *Config
+	exec         Executor
+	docker       SondaDocker
+	estados      map[string]*Estado
+	logs         map[string]*anel
+	inscritos    map[int]chan []byte
+	proxID       int
+	intervalo    time.Duration // de quanto em quanto tempo repete a checagem de "pronto"
+	subindo      bool
+	ultimoDocker string // ultimo estado do docker publicado, para nao repetir evento igual
 }
 
-func NovoGerente(raiz, caminhoCfg string, cfg *Config, exe Executor) *Gerente {
+func NovoGerente(raiz, caminhoCfg string, cfg *Config, exe Executor, docker SondaDocker) *Gerente {
 	g := &Gerente{
 		raiz:       raiz,
 		caminhoCfg: caminhoCfg,
 		cfg:        cfg,
 		exec:       exe,
+		docker:     docker,
 		estados:    map[string]*Estado{},
 		logs:       map[string]*anel{},
 		inscritos:  map[int]chan []byte{},
@@ -508,14 +511,88 @@ func (g *Gerente) Parar(ctx context.Context, ids []string) []error {
 func (g *Gerente) Vigiar(ctx context.Context, intervalo time.Duration) {
 	tick := time.NewTicker(intervalo)
 	defer tick.Stop()
+	// O docker anda num ritmo mais folgado: cada checagem custa um processo a mais, e o
+	// engine nao vai e volta a cada quatro segundos.
+	tickDocker := time.NewTicker(2 * intervalo)
+	defer tickDocker.Stop()
+
+	g.varrer(ctx)
+	go g.PublicarDocker(ctx)
 	for {
-		g.varrer(ctx)
 		select {
 		case <-ctx.Done():
 			return
 		case <-tick.C:
+			g.varrer(ctx)
+		case <-tickDocker.C:
+			g.PublicarDocker(ctx)
 		}
 	}
+}
+
+// ------------------------------------------------------------------
+// docker
+// ------------------------------------------------------------------
+
+// nomesDeContainer lista os containers citados no config - sao esses que a tela acompanha,
+// e nao todo container da maquina.
+func (g *Gerente) nomesDeContainer() []string {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	nomes := []string{}
+	for _, s := range g.cfg.Servicos {
+		if s.Tipo != TipoDocker {
+			continue
+		}
+		nome := s.Container
+		if nome == "" && s.Compose != nil {
+			nome = s.Compose.Servico
+		}
+		if nome != "" {
+			nomes = append(nomes, nome)
+		}
+	}
+	return nomes
+}
+
+func (g *Gerente) EstadoDocker(ctx context.Context) EstadoDocker {
+	if g.docker == nil {
+		return EstadoDocker{Mensagem: "sonda do docker indisponivel"}
+	}
+	return g.docker.Estado(ctx, g.nomesDeContainer())
+}
+
+// PublicarDocker manda o estado do docker para a tela, mas so quando ele muda: sem isso
+// seriam eventos identicos a cada ciclo.
+func (g *Gerente) PublicarDocker(ctx context.Context) EstadoDocker {
+	estado := g.EstadoDocker(ctx)
+	dados, err := json.Marshal(estado)
+	if err != nil {
+		return estado
+	}
+	g.mu.Lock()
+	mudou := string(dados) != g.ultimoDocker
+	if mudou {
+		g.ultimoDocker = string(dados)
+	}
+	g.mu.Unlock()
+	if mudou {
+		g.emitir(map[string]any{"tipo": "docker", "docker": estado})
+	}
+	return estado
+}
+
+// AbrirDocker sobe o Docker Desktop a pedido da tela, com o andamento indo para os avisos.
+func (g *Gerente) AbrirDocker(ctx context.Context) error {
+	if g.docker == nil {
+		return errors.New("sonda do docker indisponivel")
+	}
+	err := g.docker.Garantir(ctx, func(linha string) {
+		g.emitir(map[string]any{"tipo": "aviso", "texto": linha})
+		g.PublicarDocker(ctx)
+	})
+	g.PublicarDocker(ctx)
+	return err
 }
 
 func (g *Gerente) varrer(ctx context.Context) {

@@ -168,6 +168,32 @@
     </section>
 
     <aside class="lateral">
+      <section class="painel painel-docker" :class="{ parado: !docker.rodando }">
+        <header class="painel-topo">
+          <h2>docker</h2>
+          <span class="dica">{{ docker.rodando ? 'engine ' + docker.versao : (docker.iniciando ? 'abrindo...' : 'parado') }}</span>
+        </header>
+        <div class="docker-corpo">
+          <div class="docker-linha">
+            <span class="led" :data-status="docker.rodando ? 'pronto' : (docker.iniciando ? 'subindo' : 'erro')" aria-hidden="true"></span>
+            <span class="docker-msg">{{ textoDocker }}</span>
+            <button v-if="!docker.rodando && !docker.iniciando" type="button" class="mini destaque" @click="abrirDocker">
+              abrir Docker Desktop
+            </button>
+          </div>
+
+          <ul class="containers" v-if="docker.containers.length">
+            <li v-for="c in docker.containers" :key="c.nome">
+              <span class="led" :data-status="c.estado === 'running' ? 'pronto' : 'parado'" aria-hidden="true"></span>
+              <b>{{ c.nome }}</b>
+              <span class="portas" v-if="portasCurtas(c.portas)">{{ portasCurtas(c.portas) }}</span>
+              <span class="dica">{{ c.status }}</span>
+            </li>
+          </ul>
+          <p v-else-if="docker.rodando" class="dica">nenhum container do config criado ainda.</p>
+        </div>
+      </section>
+
       <section class="painel">
         <header class="painel-topo">
           <h2>plano de subida</h2>

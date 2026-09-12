@@ -110,11 +110,45 @@ func (e *execFake) instantaneo() (ordem []string, prontosAo map[string][]string,
 // apoio
 // ------------------------------------------------------------------
 
+// dockerFake responde no lugar do docker de verdade: os testes precisam falar sobre engine
+// parado, engine no ar e Docker Desktop abrindo sem depender do que esta instalado.
+type dockerFake struct {
+	mu       sync.Mutex
+	estado   EstadoDocker
+	erro     error
+	garantiu int
+	nomes    []string // ultimos nomes de container consultados
+}
+
+func (d *dockerFake) Estado(_ context.Context, nomes []string) EstadoDocker {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	d.nomes = append([]string{}, nomes...)
+	return d.estado
+}
+
+func (d *dockerFake) Garantir(_ context.Context, logar func(string)) error {
+	d.mu.Lock()
+	d.garantiu++
+	err := d.erro
+	d.mu.Unlock()
+	if logar != nil {
+		logar("abrindo o Docker Desktop (fake)")
+	}
+	return err
+}
+
+func (d *dockerFake) vezes() int {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	return d.garantiu
+}
+
 func gerenteTeste(t *testing.T, comp map[string]comportamento) (*Gerente, *execFake, *Config) {
 	t.Helper()
 	cfg := configTeste()
 	fake := novoExecFake(cfg.ids(), comp)
-	g := NovoGerente(t.TempDir(), "", cfg, fake)
+	g := NovoGerente(t.TempDir(), "", cfg, fake, &dockerFake{estado: EstadoDocker{Rodando: true, Versao: "27.0"}})
 	g.intervalo = 5 * time.Millisecond // nos testes a checagem de "pronto" e bem mais rapida
 	return g, fake, cfg
 }
@@ -356,7 +390,7 @@ func TestEditarGravaNoDiscoEAvisaATela(t *testing.T) {
 	if err := salvarConfig(caminho, cfg); err != nil {
 		t.Fatal(err)
 	}
-	g := NovoGerente(t.TempDir(), caminho, cfg, novoExecFake(cfg.ids(), nil))
+	g := NovoGerente(t.TempDir(), caminho, cfg, novoExecFake(cfg.ids(), nil), &dockerFake{})
 
 	inscricao, ch := g.Inscrever()
 	defer g.Desinscrever(inscricao)
@@ -397,7 +431,7 @@ func TestEditarInvalidoNaoTocaNoArquivo(t *testing.T) {
 	}
 	antes, _ := os.ReadFile(caminho)
 
-	g := NovoGerente(t.TempDir(), caminho, cfg, novoExecFake(cfg.ids(), nil))
+	g := NovoGerente(t.TempDir(), caminho, cfg, novoExecFake(cfg.ids(), nil), &dockerFake{})
 	if err := g.Editar([]EdicaoServico{{ID: "db", Depende: []string{"web"}}}); err == nil {
 		t.Fatal("ciclo deveria ser recusado")
 	}

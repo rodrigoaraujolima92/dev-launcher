@@ -422,6 +422,41 @@ main {
 }
 .dica { font-size: 10px; color: var(--fraco); letter-spacing: 0.04em; }
 
+/* ---------------- painel do docker ---------------- */
+
+.painel-docker.parado { border-color: rgba(255, 98, 87, 0.35); }
+.docker-corpo { padding: 11px 13px; display: flex; flex-direction: column; gap: 9px; }
+
+.docker-linha { display: flex; align-items: center; gap: 8px; }
+.docker-msg { flex: 1; font-size: 11.5px; color: var(--fraco); }
+
+.containers { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 4px; }
+.containers li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 7px;
+  font-size: 11px;
+  background: #0b1110;
+  border: 1px solid var(--linha);
+  border-radius: 2px;
+}
+.containers b { font-weight: 500; color: var(--texto); }
+.containers .dica {
+  margin-left: auto;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 45%;
+}
+.containers .portas {
+  padding: 0 5px;
+  font-size: 10px;
+  color: var(--azul);
+  border: 1px solid rgba(99, 205, 255, 0.28);
+  border-radius: 2px;
+}
+
 .plano { padding: 12px 13px; display: flex; flex-direction: column; gap: 10px; }
 
 .onda { display: grid; grid-template-columns: 54px minmax(0, 1fr); gap: 10px; align-items: start; }

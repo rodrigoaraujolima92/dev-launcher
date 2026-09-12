@@ -42,6 +42,21 @@ despejar o erro de bind.
 - **Nao reinicia o que ja esta no ar.** Containers sobem com `--no-recreate`; app que ja
   esta atendendo na porta e marcada como "ja estava no ar".
 
+## Docker
+
+O painel **docker** na lateral mostra o estado do engine, a versao e os containers do
+config - nome, portas e status - inclusive os que ainda nao foram criados ("ausente").
+Container de outro projeto que esteja na maquina nao aparece ali.
+
+Com o engine parado, o painel fica vermelho e oferece **abrir Docker Desktop**: o launcher
+acha o executavel (`%ProgramFiles%\Docker\Docker\Docker Desktop.exe` e os outros caminhos
+de instalacao), abre e espera o engine responder, mostrando o andamento na tela.
+
+Na subida isso e automatico: **se a selecao tiver algum projeto docker e o engine estiver
+parado, o Docker Desktop e aberto e a subida espera ele ficar de pe** (ate 3 minutos, e o
+que uma maquina fria com WSL2 costuma levar). Quem sobe so front-end nao paga essa espera.
+Os projetos docker da mesma onda compartilham uma unica abertura.
+
 ## Acoes
 
 **Por projeto:** `log`, `subir`, `↻` (reiniciar: para e sobe de novo), `parar` e o menu `⋯`
@@ -164,6 +179,8 @@ Config da primeira versao (sem `grupos`/`perfis`) e migrado sozinho ao abrir.
 | POST/DELETE | `/api/servicos` · `/api/servicos/{id}` | cadastro completo |
 | POST | `/api/servicos/{id}/mover` | `{"grupo": "...", "antes": "id ou vazio"}` (arrastar e soltar) |
 | POST | `/api/abrir` | `{"id": "...", "alvo": "pasta\|editor"}` |
+| GET | `/api/docker` | estado do engine + containers do config |
+| POST | `/api/docker/abrir` | abre o Docker Desktop e espera o engine (responde na hora) |
 | POST | `/api/encerrar` | encerra o proprio launcher |
 | POST/DELETE | `/api/grupos` · `/api/grupos/ordem` · `/api/grupos/{id}` | grupos |
 | POST/DELETE | `/api/perfis` · `/api/perfis/{id}/aplicar` · `/api/perfis/{id}` | perfis |
