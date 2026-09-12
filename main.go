@@ -49,6 +49,11 @@ func main() {
 	if cfg.PortaUI == 0 {
 		cfg.PortaUI = 7010
 	}
+	if cfg.RaizNavegacao == "" {
+		// O seletor de pastas comeca na pasta que guarda os projetos (o pai da raiz):
+		// C:\Users\Pichau\projetos, nao so o appdaturma.
+		cfg.RaizNavegacao = filepath.Dir(raiz)
+	}
 
 	exe := NovoExecutorSO(raiz, cfg.RedeDocker)
 	g := NovoGerente(raiz, cfgPath, cfg, exe)
@@ -174,6 +179,129 @@ func rotas(g *Gerente, raiz string) http.Handler {
 		responderJSON(w, http.StatusOK, map[string]any{"config": g.Config()})
 	})
 
+	mux.HandleFunc("POST /api/servicos", func(w http.ResponseWriter, r *http.Request) {
+		var entrada EntradaServico
+		if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<20)).Decode(&entrada); err != nil {
+			responderErro(w, http.StatusBadRequest, err)
+			return
+		}
+		id, err := g.SalvarServico(entrada)
+		if err != nil {
+			responderErro(w, http.StatusBadRequest, err)
+			return
+		}
+		responderJSON(w, http.StatusOK, map[string]any{"id": id, "config": g.Config()})
+	})
+
+	mux.HandleFunc("DELETE /api/servicos/{id}", func(w http.ResponseWriter, r *http.Request) {
+		if err := g.RemoverServico(r.PathValue("id")); err != nil {
+			responderErro(w, http.StatusBadRequest, err)
+			return
+		}
+		responderJSON(w, http.StatusOK, map[string]any{"config": g.Config()})
+	})
+
+	mux.HandleFunc("POST /api/grupos", func(w http.ResponseWriter, r *http.Request) {
+		var corpo struct {
+			ID   string `json:"id"`
+			Nome string `json:"nome"`
+		}
+		if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<16)).Decode(&corpo); err != nil {
+			responderErro(w, http.StatusBadRequest, err)
+			return
+		}
+		id, err := g.SalvarGrupo(corpo.ID, corpo.Nome)
+		if err != nil {
+			responderErro(w, http.StatusBadRequest, err)
+			return
+		}
+		responderJSON(w, http.StatusOK, map[string]any{"id": id, "config": g.Config()})
+	})
+
+	mux.HandleFunc("POST /api/grupos/ordem", func(w http.ResponseWriter, r *http.Request) {
+		ids, err := lerIDs(w, r)
+		if err != nil {
+			responderErro(w, http.StatusBadRequest, err)
+			return
+		}
+		if err := g.OrdenarGrupos(ids); err != nil {
+			responderErro(w, http.StatusBadRequest, err)
+			return
+		}
+		responderJSON(w, http.StatusOK, map[string]any{"config": g.Config()})
+	})
+
+	mux.HandleFunc("DELETE /api/grupos/{id}", func(w http.ResponseWriter, r *http.Request) {
+		if err := g.RemoverGrupo(r.PathValue("id")); err != nil {
+			responderErro(w, http.StatusBadRequest, err)
+			return
+		}
+		responderJSON(w, http.StatusOK, map[string]any{"config": g.Config()})
+	})
+
+	mux.HandleFunc("POST /api/perfis", func(w http.ResponseWriter, r *http.Request) {
+		var corpo struct {
+			ID       string   `json:"id"`
+			Nome     string   `json:"nome"`
+			Servicos []string `json:"servicos"`
+		}
+		if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<20)).Decode(&corpo); err != nil {
+			responderErro(w, http.StatusBadRequest, err)
+			return
+		}
+		id, err := g.SalvarPerfil(corpo.ID, corpo.Nome, corpo.Servicos)
+		if err != nil {
+			responderErro(w, http.StatusBadRequest, err)
+			return
+		}
+		responderJSON(w, http.StatusOK, map[string]any{"id": id, "config": g.Config()})
+	})
+
+	mux.HandleFunc("DELETE /api/perfis/{id}", func(w http.ResponseWriter, r *http.Request) {
+		if err := g.RemoverPerfil(r.PathValue("id")); err != nil {
+			responderErro(w, http.StatusBadRequest, err)
+			return
+		}
+		responderJSON(w, http.StatusOK, map[string]any{"config": g.Config()})
+	})
+
+	mux.HandleFunc("POST /api/perfis/{id}/aplicar", func(w http.ResponseWriter, r *http.Request) {
+		if err := g.AplicarPerfil(r.PathValue("id")); err != nil {
+			responderErro(w, http.StatusBadRequest, err)
+			return
+		}
+		responderJSON(w, http.StatusOK, map[string]any{"config": g.Config()})
+	})
+
+	mux.HandleFunc("GET /api/pastas", func(w http.ResponseWriter, r *http.Request) {
+		caminho, raizNav, err := caminhoPedido(g, r)
+		if err != nil {
+			responderErro(w, http.StatusForbidden, err)
+			return
+		}
+		listagem, err := listarPastas(caminho)
+		if err != nil {
+			responderErro(w, http.StatusBadRequest, err)
+			return
+		}
+		listagem.Raiz = raizNav
+		responderJSON(w, http.StatusOK, listagem)
+	})
+
+	mux.HandleFunc("GET /api/inspecionar", func(w http.ResponseWriter, r *http.Request) {
+		caminho, _, err := caminhoPedido(g, r)
+		if err != nil {
+			responderErro(w, http.StatusForbidden, err)
+			return
+		}
+		insp, err := inspecionar(caminho)
+		if err != nil {
+			responderErro(w, http.StatusBadRequest, err)
+			return
+		}
+		responderJSON(w, http.StatusOK, insp)
+	})
+
 	mux.HandleFunc("POST /api/plano", func(w http.ResponseWriter, r *http.Request) {
 		ids, err := lerIDs(w, r)
 		if err != nil {
@@ -273,6 +401,27 @@ func mustJSON(v any) []byte {
 		return []byte("{}")
 	}
 	return dados
+}
+
+// caminhoPedido resolve o "caminho" da query e aplica a cerca: fora da raiz de navegacao
+// so com livre=1, que na tela e o checkbox "usar caminho fora da pasta de projetos".
+func caminhoPedido(g *Gerente, r *http.Request) (caminho string, raizNav string, err error) {
+	raizNav = g.Config().RaizNavegacao
+	caminho = strings.TrimSpace(r.URL.Query().Get("caminho"))
+	if caminho == "" {
+		caminho = raizNav
+	}
+	if caminho == "" {
+		return "", "", errors.New("nenhuma pasta informada")
+	}
+	caminho, err = filepath.Abs(caminho)
+	if err != nil {
+		return "", raizNav, err
+	}
+	if r.URL.Query().Get("livre") != "1" && raizNav != "" && !dentroDe(raizNav, caminho) {
+		return "", raizNav, fmt.Errorf("%s fica fora de %s - marque \"caminho livre\" para navegar ali", caminho, raizNav)
+	}
+	return caminho, raizNav, nil
 }
 
 func lerIDs(w http.ResponseWriter, r *http.Request) ([]string, error) {

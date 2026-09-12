@@ -361,7 +361,8 @@ main {
 
 /* ---------------- lateral ---------------- */
 
-.lateral { position: sticky; top: 82px; display: flex; flex-direction: column; gap: 14px; }
+/* topo (67px) + barra de perfis (~40px) + folga */
+.lateral { position: sticky; top: 122px; display: flex; flex-direction: column; gap: 14px; }
 
 .painel {
   background: linear-gradient(180deg, var(--painel-alto), var(--painel));
@@ -452,6 +453,288 @@ main {
 }
 .aviso.erro { border-left-color: var(--vermelho); }
 .aviso.ok { border-left-color: var(--verde); }
+
+/* ---------------- barra de perfis ---------------- */
+
+.barra-perfis {
+  position: sticky;
+  top: 67px;
+  z-index: 18;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 22px;
+  background: rgba(8, 11, 10, 0.82);
+  backdrop-filter: blur(8px);
+  border-bottom: 1px solid var(--linha);
+}
+
+.rotulo-barra {
+  font-family: var(--display);
+  font-size: 10px;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--fraco);
+}
+
+.perfis { display: flex; gap: 6px; flex-wrap: wrap; flex: 1; }
+
+.perfil {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 4px 3px 10px;
+  font-size: 11.5px;
+  color: var(--texto);
+  background: #101817;
+  border: 1px solid var(--linha-forte);
+  border-radius: 999px;
+  cursor: pointer;
+}
+.perfil:hover { border-color: var(--ambar); }
+.perfil.ativo {
+  color: #17110a;
+  background: var(--ambar);
+  border-color: var(--ambar);
+}
+.perfil .aplicar {
+  padding: 0;
+  font-family: inherit;
+  font-size: inherit;
+  color: inherit;
+  background: none;
+  border: 0;
+  cursor: pointer;
+}
+.perfil .qtd { font-size: 10px; opacity: 0.7; }
+.perfil .editar-perfil {
+  padding: 0 5px;
+  font-family: var(--mono);
+  font-size: 11px;
+  line-height: 1.4;
+  color: inherit;
+  background: rgba(0, 0, 0, 0.18);
+  border: 0;
+  border-radius: 999px;
+  cursor: pointer;
+  opacity: 0.65;
+}
+.perfil .editar-perfil:hover { opacity: 1; }
+.perfis:empty::after { content: "nenhum perfil salvo ainda"; font-size: 11px; color: var(--fraco); }
+
+.acoes-barra { display: flex; gap: 6px; }
+.mini.destaque { color: var(--ambar); border-color: rgba(255, 176, 32, 0.45); }
+
+/* ---------------- cabecalho de grupo ---------------- */
+
+.grupo-titulo .acoes-grupo {
+  display: flex;
+  gap: 4px;
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+.grupo-titulo:hover .acoes-grupo, .grupo-titulo:focus-within .acoes-grupo { opacity: 1; }
+.acoes-grupo button {
+  padding: 1px 6px;
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--fraco);
+  background: none;
+  border: 1px solid var(--linha);
+  border-radius: 2px;
+  cursor: pointer;
+}
+.acoes-grupo button:hover { color: var(--ambar); border-color: var(--ambar); }
+.grupo-vazio {
+  padding: 10px 14px;
+  font-size: 11.5px;
+  color: var(--fraco);
+  border: 1px dashed var(--linha);
+  border-radius: var(--raio);
+}
+
+/* ---------------- modal ---------------- */
+
+.modal { position: fixed; inset: 0; z-index: 50; display: grid; place-items: center; }
+.modal[hidden] { display: none; }
+.modal-fundo { position: absolute; inset: 0; background: rgba(4, 6, 6, 0.72); backdrop-filter: blur(2px); }
+
+.modal-caixa {
+  position: relative;
+  width: min(720px, calc(100vw - 40px));
+  max-height: calc(100vh - 60px);
+  display: flex;
+  flex-direction: column;
+  background: linear-gradient(180deg, #16201e, #0f1514);
+  border: 1px solid var(--linha-forte);
+  border-radius: var(--raio);
+  box-shadow: 0 30px 70px rgba(0, 0, 0, 0.65);
+  animation: entrar 0.18s ease-out;
+}
+
+.modal-topo {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 13px 16px;
+  border-bottom: 1px solid var(--linha);
+}
+.modal-topo h2 {
+  margin: 0;
+  font-family: var(--display);
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+
+.modal-corpo { padding: 16px; overflow: auto; }
+.modal-acoes {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 12px 16px;
+  border-top: 1px solid var(--linha);
+}
+.modal-acoes .esquerda { margin-right: auto; }
+
+/* ---------------- formulario ---------------- */
+
+.campos { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px 14px; }
+.campo { display: flex; flex-direction: column; gap: 5px; }
+.campo.largo { grid-column: 1 / -1; }
+/* display:flex vence o hidden do navegador - o formulario esconde os campos do tipo que
+   nao esta selecionado justamente por aqui. */
+.campo[hidden] { display: none; }
+
+.campo label, .campo .rotulo-campo {
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--fraco);
+}
+
+.campo input[type="text"], .campo input[type="number"], .campo select, .campo textarea {
+  padding: 7px 9px;
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--texto);
+  background: #0b1110;
+  border: 1px solid var(--linha-forte);
+  border-radius: 2px;
+}
+.campo input:focus, .campo select:focus, .campo textarea:focus {
+  outline: none;
+  border-color: var(--ambar);
+  box-shadow: 0 0 0 2px var(--ambar-fraco);
+}
+.campo textarea { resize: vertical; min-height: 58px; }
+.campo .ajuda { font-size: 10.5px; color: var(--fraco); }
+.campo .erro-campo { font-size: 10.5px; color: var(--vermelho); }
+
+.linha-campo { display: flex; gap: 6px; }
+.linha-campo input { flex: 1; }
+
+.opcao-livre { display: flex; align-items: center; gap: 7px; font-size: 11px; color: var(--fraco); }
+.opcao-livre input { accent-color: var(--ambar); }
+
+.seletor-tipo { display: flex; gap: 6px; }
+.seletor-tipo button {
+  flex: 1;
+  padding: 7px;
+  font-family: var(--mono);
+  font-size: 11.5px;
+  color: var(--fraco);
+  background: #0b1110;
+  border: 1px solid var(--linha-forte);
+  border-radius: 2px;
+  cursor: pointer;
+}
+.seletor-tipo button[aria-pressed="true"] { color: var(--ambar); border-color: var(--ambar); background: var(--ambar-fraco); }
+
+.lista-dep {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 3px;
+  max-height: 150px;
+  overflow: auto;
+  padding: 8px;
+  background: #0b1110;
+  border: 1px solid var(--linha-forte);
+  border-radius: 2px;
+}
+.lista-dep label { display: flex; align-items: center; gap: 6px; font-size: 11.5px; color: var(--texto); text-transform: none; letter-spacing: 0; }
+.lista-dep input { accent-color: var(--ambar); }
+
+.sugestoes { display: flex; flex-wrap: wrap; gap: 5px; }
+.sugestao {
+  padding: 2px 8px;
+  font-size: 11px;
+  color: var(--azul);
+  background: rgba(99, 205, 255, 0.08);
+  border: 1px solid rgba(99, 205, 255, 0.3);
+  border-radius: 2px;
+  cursor: pointer;
+}
+.sugestao:hover { color: var(--ambar); border-color: var(--ambar); background: var(--ambar-fraco); }
+
+/* ---------------- navegador de pastas ---------------- */
+
+.trilha {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 10px;
+  padding: 7px 9px;
+  font-size: 11.5px;
+  color: var(--fraco);
+  background: #0b1110;
+  border: 1px solid var(--linha);
+  border-radius: 2px;
+  word-break: break-all;
+}
+.trilha b { color: var(--texto); font-weight: 500; }
+
+.lista-pastas {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-height: 46vh;
+  overflow: auto;
+  padding: 6px;
+  background: #0b1110;
+  border: 1px solid var(--linha-forte);
+  border-radius: 2px;
+}
+
+.item-pasta {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 6px 9px;
+  font-size: 12px;
+  color: var(--texto);
+  background: none;
+  border: 1px solid transparent;
+  border-radius: 2px;
+  cursor: pointer;
+  text-align: left;
+}
+.item-pasta:hover { background: var(--ambar-fraco); border-color: rgba(255, 176, 32, 0.25); }
+.item-pasta .nome-pasta { flex: 1; }
+.item-pasta .marcas { display: flex; gap: 4px; }
+.item-pasta .marca {
+  padding: 0 5px;
+  font-size: 9.5px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--roxo);
+  border: 1px solid rgba(183, 155, 255, 0.3);
+  border-radius: 2px;
+}
+.item-pasta.acima { color: var(--fraco); }
+.lista-pastas:empty::after { content: "nenhuma subpasta aqui."; padding: 8px; font-size: 11.5px; color: var(--fraco); }
 
 ::-webkit-scrollbar { width: 9px; height: 9px; }
 ::-webkit-scrollbar-track { background: transparent; }

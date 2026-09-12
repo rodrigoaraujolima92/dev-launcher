@@ -1,7 +1,7 @@
 # dev-launcher
 
-Interface web para subir o ambiente local do AppDaTurma: marca quais projetos sobem,
-define quem espera quem e acompanha o log de cada um.
+Interface web para subir o ambiente local: marca quais projetos sobem, define quem espera
+quem, agrupa por empresa/produto, salva perfis de execucao e acompanha o log de cada um.
 
 ```powershell
 ../start-ui.ps1          # compila se precisar, sobe e abre o navegador
@@ -21,6 +21,37 @@ Sem interface, so as abas do Windows Terminal: `../start-dev.ps1`.
 - **Nao reinicia o que ja esta no ar.** Containers sobem com `--no-recreate`; app que ja
   esta atendendo na porta e marcada como "ja estava no ar".
 
+## Grupos
+
+As secoes da tela sao editaveis: crie um grupo por empresa ou produto (appdaturma,
+photonow, isugar), renomeie, reordene com as setas e mova cada projeto pelo campo **grupo**
+do formulario. Grupo so pode ser apagado quando esta vazio - apagar em cascata levaria
+projeto junto sem querer.
+
+## Perfis de execucao
+
+Um perfil e uma stack salva: marque os projetos que quer naquele contexto e clique em
+**salvar selecao como perfil** ("stack completa", "so as APIs", "front + backend").
+Clicar no perfil marca exatamente aqueles projetos e desmarca o resto; o `⋯` do chip
+renomeia, apaga ou **grava a selecao atual** por cima do perfil.
+
+## Cadastrar um projeto pela tela
+
+**+ novo projeto** (ou **+ projeto** no cabecalho de um grupo) abre o formulario:
+
+1. **procurar** navega a partir de `C:\Users\Pichau\projetos` e mostra etiquetas
+   (`GIT`, `NODE`, `GO`, `MAVEN`, `COMPOSE`, `SCRIPT`) para voce reconhecer o projeto.
+   Para uma pasta fora dessa raiz, marque **usar caminho fora da pasta de projetos** - a
+   cerca e o padrao porque este campo vira diretorio de execucao de um comando.
+2. Escolhida a pasta, o launcher sugere como rodar: scripts do `package.json` (com a porta
+   lida do `--port` do proprio script), `go run ./cmd/api`, `air`, `mvn spring-boot:run` e
+   qualquer `.ps1` na raiz do projeto - e para `docker-compose*.yml` lista os servicos de
+   dentro do arquivo.
+3. Porta, checagem de "pronto", timeout e dependencias completam o cadastro.
+
+Porta repetida nao bloqueia o cadastro, so avisa: como a checagem de "pronto" olha a porta,
+dois projetos na mesma porta se confundem.
+
 ## Modos de execucao (servicos `app`)
 
 | Modo | O que faz |
@@ -30,17 +61,27 @@ Sem interface, so as abas do Windows Terminal: `../start-dev.ps1`.
 
 ## config.json
 
-A tela edita **selecao**, **modo** e **dependencias** - e grava no arquivo. Caminho, comando
-e checagem de "pronto" so mudam editando o JSON na mao (de proposito: o navegador nao deve
-poder trocar o comando que sera executado).
+Tudo que a tela edita vai para este arquivo. Campo a campo:
+
+```jsonc
+{
+  "porta_ui": 7010,
+  "rede_docker": "PRODUCTION",          // criada se nao existir (os compose usam como external)
+  "raiz_navegacao": "C:\\Users\\Pichau\\projetos",  // onde o seletor de pastas comeca
+  "grupos": [{ "id": "infra", "nome": "infraestrutura" }],
+  "perfis": [{ "id": "so-apis", "nome": "so as APIs", "servicos": ["db", "permissions"] }],
+  "perfil_ativo": "so-apis",
+  "servicos": [ /* ... */ ]
+}
+```
 
 ```jsonc
 {
   "id": "backend",
   "nome": "appdaturma-backend",
-  "grupo": "api",                  // so agrupa na tela
+  "grupo": "api",                  // id de um grupo
   "tipo": "app",                   // app | docker
-  "dir": "appdaturma-backend",     // relativo a esta pasta/..
+  "dir": "appdaturma-backend",     // relativo a esta pasta/.., ou absoluto
   "cmd": "& './run-local.ps1'",    // roda no pwsh, dentro de "dir"
   "porta": 7003,
   "url": "http://localhost:7003",  // vira o link "abrir"
@@ -76,6 +117,20 @@ Checagens de `pronto`:
 | `http` | `url` | health check HTTP; qualquer resposta < 500 conta |
 
 Dependencia circular e recusada na hora de salvar, com o caminho do ciclo na mensagem.
+Config da primeira versao (sem `grupos`/`perfis`) e migrado sozinho ao abrir.
+
+## API
+
+| Metodo | Rota | Para que |
+| --- | --- | --- |
+| GET | `/api/estado` | config + estado de cada servico |
+| GET | `/api/eventos` | SSE: estado, log, config, fim de subida |
+| POST | `/api/subir` · `/api/parar` · `/api/plano` | `{"ids": [...]}` |
+| POST | `/api/config` | selecao/modo/dependencias (o que muda a cada clique) |
+| POST/DELETE | `/api/servicos` · `/api/servicos/{id}` | cadastro completo |
+| POST/DELETE | `/api/grupos` · `/api/grupos/ordem` · `/api/grupos/{id}` | grupos |
+| POST/DELETE | `/api/perfis` · `/api/perfis/{id}/aplicar` · `/api/perfis/{id}` | perfis |
+| GET | `/api/pastas` · `/api/inspecionar` | seletor de pastas e sugestoes (`?livre=1` sai da cerca) |
 
 ## Testes
 
@@ -86,3 +141,5 @@ go test -race ./...
 
 Os testes usam um executor de mentira (`execFake`) no lugar do docker/pwsh, entao a ordem
 de subida, a espera por dependencia e os casos de falha sao verificados sem levantar nada.
+As regras de cadastro (cerca de caminho, id gerado, remocao limpando dependencias e
+perfis), o parser de `docker-compose` e as sugestoes de comando tem teste proprio.

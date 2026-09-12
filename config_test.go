@@ -11,12 +11,12 @@ import (
 //
 //	db, rabbit (nao esperam ninguem) -> api (espera os dois) -> web (espera a api)
 func configTeste() *Config {
-	return &Config{
+	cfg := &Config{
 		PortaUI:    7010,
 		RedeDocker: "PRODUCTION",
 		Servicos: []*Servico{
 			{
-				ID: "db", Nome: "Postgres", Tipo: TipoDocker,
+				ID: "db", Nome: "Postgres", Grupo: "infra", Tipo: TipoDocker,
 				Compose: &Compose{Projeto: "p", Arquivo: "a.yml", Servico: "db"},
 				Pronto:  Checagem{Tipo: "porta", Porta: 5432},
 				Timeout: 10,
@@ -24,14 +24,14 @@ func configTeste() *Config {
 				Porta:   5432,
 			},
 			{
-				ID: "rabbit", Nome: "RabbitMQ", Tipo: TipoDocker,
+				ID: "rabbit", Nome: "RabbitMQ", Grupo: "infra", Tipo: TipoDocker,
 				Compose: &Compose{Projeto: "p", Arquivo: "r.yml", Servico: "rabbitmq"},
 				Pronto:  Checagem{Tipo: "porta", Porta: 5672},
 				Timeout: 10,
 				Depende: []string{},
 			},
 			{
-				ID: "api", Nome: "backend", Tipo: TipoApp,
+				ID: "api", Nome: "backend", Grupo: "api", Tipo: TipoApp,
 				Dir: "backend", Cmd: "go run .",
 				Pronto:  Checagem{Tipo: "porta", Porta: 7003},
 				Timeout: 10,
@@ -39,7 +39,7 @@ func configTeste() *Config {
 				Depende: []string{"db", "rabbit"},
 			},
 			{
-				ID: "web", Nome: "frontend", Tipo: TipoApp,
+				ID: "web", Nome: "frontend", Grupo: "web", Tipo: TipoApp,
 				Dir: "front", Cmd: "npm run serve",
 				Pronto:  Checagem{Tipo: "porta", Porta: 8080},
 				Timeout: 10,
@@ -48,6 +48,8 @@ func configTeste() *Config {
 			},
 		},
 	}
+	cfg.normalizar() // cria os grupos infra/api/web a partir dos servicos
+	return cfg
 }
 
 func TestValidarAceitaConfigBoa(t *testing.T) {
@@ -65,13 +67,20 @@ func TestValidarRecusaProblemas(t *testing.T) {
 		{"dependencia inexistente", func(c *Config) { c.porID("api").Depende = []string{"fantasma"} }, "nao existe"},
 		{"id repetido", func(c *Config) { c.Servicos[1].ID = "db" }, "id repetido"},
 		{"tipo invalido", func(c *Config) { c.porID("api").Tipo = "magia" }, "tipo invalido"},
-		{"app sem cmd", func(c *Config) { c.porID("api").Cmd = "" }, "precisa de dir e cmd"},
+		{"app sem cmd", func(c *Config) { c.porID("api").Cmd = "" }, "precisa de pasta e comando"},
 		{"docker sem compose", func(c *Config) { c.porID("db").Compose = nil }, "compose.projeto"},
 		{"checagem sem porta", func(c *Config) { c.porID("db").Pronto = Checagem{Tipo: "porta"} }, "sem porta"},
 		{"checagem desconhecida", func(c *Config) { c.porID("db").Pronto = Checagem{Tipo: "vibes"} }, "pronto.tipo invalido"},
 		{"modo invalido", func(c *Config) { c.porID("api").Modo = "turbo" }, "modo invalido"},
 		{"depende de si mesmo", func(c *Config) { c.porID("api").Depende = []string{"api"} }, "depende de si mesmo"},
 		{"ciclo", func(c *Config) { c.porID("db").Depende = []string{"web"} }, "dependencia circular"},
+		{"servico sem nome", func(c *Config) { c.porID("db").Nome = " " }, "sem nome"},
+		{"porta fora da faixa", func(c *Config) { c.porID("db").Porta = 99999 }, "fora da faixa"},
+		{"grupo inexistente", func(c *Config) { c.porID("db").Grupo = "fantasma" }, "que nao existe"},
+		{"grupo sem nome", func(c *Config) { c.Grupos[0].Nome = "" }, "sem nome"},
+		{"perfil citando servico morto", func(c *Config) {
+			c.Perfis = []*Perfil{{ID: "p1", Nome: "stack", Servicos: []string{"fantasma"}}}
+		}, "que nao existe"},
 	}
 
 	for _, caso := range casos {

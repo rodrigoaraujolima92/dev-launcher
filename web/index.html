@@ -32,6 +32,16 @@
   </div>
 </header>
 
+<nav class="barra-perfis" aria-label="perfis de execucao">
+  <span class="rotulo-barra">perfis</span>
+  <div class="perfis" id="perfis"></div>
+  <div class="acoes-barra">
+    <button class="mini" id="btn-novo-perfil" type="button">salvar selecao como perfil</button>
+    <button class="mini" id="btn-novo-grupo" type="button">novo grupo</button>
+    <button class="mini destaque" id="btn-novo-projeto" type="button">+ novo projeto</button>
+  </div>
+</nav>
+
 <main>
   <section class="coluna" id="servicos" aria-label="servicos"></section>
 
@@ -55,6 +65,18 @@
 </main>
 
 <div class="avisos" id="avisos" role="status" aria-live="polite"></div>
+
+<div class="modal" id="modal" hidden>
+  <div class="modal-fundo" data-fechar></div>
+  <div class="modal-caixa" role="dialog" aria-modal="true" aria-labelledby="modal-titulo">
+    <header class="modal-topo">
+      <h2 id="modal-titulo"></h2>
+      <button type="button" class="mini" data-fechar aria-label="fechar">esc</button>
+    </header>
+    <div class="modal-corpo" id="modal-corpo"></div>
+    <footer class="modal-acoes" id="modal-acoes"></footer>
+  </div>
+</div>
 
 <template id="modelo-servico">
   <article class="cartao" data-id="">
@@ -90,6 +112,7 @@
       </div>
       <div class="botoes">
         <a class="link-url" target="_blank" rel="noopener" hidden>abrir</a>
+        <button type="button" class="mini acao-editar">editar</button>
         <button type="button" class="mini acao-log">log</button>
         <button type="button" class="mini acao-subir">subir</button>
         <button type="button" class="mini perigo acao-parar">parar</button>

@@ -205,23 +205,108 @@ func (g *Gerente) emitirEstados() {
 // Edicao do config pela tela
 // ------------------------------------------------------------------
 
-func (g *Gerente) Editar(edicoes []EdicaoServico) error {
+// mutar aplica uma mudanca no config, grava no disco e avisa a tela. Toda edicao passa por
+// aqui para nunca sobrar config na memoria diferente do arquivo.
+func (g *Gerente) mutar(fn func(cfg *Config) error) error {
 	g.mu.Lock()
-	if err := aplicarEdicao(g.cfg, edicoes); err != nil {
+	antes := clonarConfig(g.cfg)
+	if err := fn(g.cfg); err != nil {
 		g.mu.Unlock()
 		return err
 	}
+	g.sincronizarEstados()
 	cfg := clonarConfig(g.cfg)
 	caminho := g.caminhoCfg
 	g.mu.Unlock()
 
 	if caminho != "" {
 		if err := salvarConfig(caminho, cfg); err != nil {
+			// Disco recusou: volta o que estava na memoria para os dois nao divergirem.
+			g.mu.Lock()
+			g.cfg = antes
+			g.sincronizarEstados()
+			g.mu.Unlock()
 			return fmt.Errorf("nao consegui salvar o config: %w", err)
 		}
 	}
 	g.emitir(map[string]any{"tipo": "config", "config": cfg})
 	return nil
+}
+
+// sincronizarEstados cria estado/log para servico novo e joga fora o do que foi apagado.
+// Precisa ser chamado com o mutex ja tomado.
+func (g *Gerente) sincronizarEstados() {
+	atuais := map[string]bool{}
+	for _, s := range g.cfg.Servicos {
+		atuais[s.ID] = true
+		if _, ok := g.estados[s.ID]; !ok {
+			g.estados[s.ID] = &Estado{ID: s.ID, Status: StatusParado, Desde: time.Now()}
+		}
+		if _, ok := g.logs[s.ID]; !ok {
+			g.logs[s.ID] = novoAnel(500)
+		}
+	}
+	for id := range g.estados {
+		if !atuais[id] {
+			delete(g.estados, id)
+			delete(g.logs, id)
+		}
+	}
+}
+
+func (g *Gerente) Editar(edicoes []EdicaoServico) error {
+	return g.mutar(func(cfg *Config) error { return aplicarEdicao(cfg, edicoes) })
+}
+
+// SalvarServico cadastra ou atualiza um projeto e devolve o id gravado.
+func (g *Gerente) SalvarServico(entrada EntradaServico) (string, error) {
+	var id string
+	err := g.mutar(func(cfg *Config) error {
+		var err error
+		id, err = salvarServico(cfg, entrada, g.raiz, cfg.RaizNavegacao)
+		return err
+	})
+	return id, err
+}
+
+func (g *Gerente) RemoverServico(id string) error {
+	return g.mutar(func(cfg *Config) error { return removerServico(cfg, id) })
+}
+
+func (g *Gerente) SalvarGrupo(id, nome string) (string, error) {
+	var novoID string
+	err := g.mutar(func(cfg *Config) error {
+		var err error
+		novoID, err = salvarGrupo(cfg, id, nome)
+		return err
+	})
+	return novoID, err
+}
+
+func (g *Gerente) RemoverGrupo(id string) error {
+	return g.mutar(func(cfg *Config) error { return removerGrupo(cfg, id) })
+}
+
+func (g *Gerente) OrdenarGrupos(ordem []string) error {
+	return g.mutar(func(cfg *Config) error { return ordenarGrupos(cfg, ordem) })
+}
+
+func (g *Gerente) SalvarPerfil(id, nome string, servicos []string) (string, error) {
+	var novoID string
+	err := g.mutar(func(cfg *Config) error {
+		var err error
+		novoID, err = salvarPerfil(cfg, id, nome, servicos)
+		return err
+	})
+	return novoID, err
+}
+
+func (g *Gerente) RemoverPerfil(id string) error {
+	return g.mutar(func(cfg *Config) error { return removerPerfil(cfg, id) })
+}
+
+func (g *Gerente) AplicarPerfil(id string) error {
+	return g.mutar(func(cfg *Config) error { return aplicarPerfil(cfg, id) })
 }
 
 // ------------------------------------------------------------------
