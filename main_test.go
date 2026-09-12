@@ -306,9 +306,89 @@ func TestInspecionarPelaAPI(t *testing.T) {
 	}
 }
 
+func TestMoverProjetoPelaAPI(t *testing.T) {
+	h, g := servidorTeste(t, nil)
+
+	resp := chamar(t, h, http.MethodPost, "/api/servicos/web/mover", `{"grupo":"infra","antes":"db"}`)
+	if resp.Code != http.StatusOK {
+		t.Fatalf("mover: %d %s", resp.Code, resp.Body)
+	}
+	cfg := g.Config()
+	if cfg.porID("web").Grupo != "infra" {
+		t.Fatalf("grupo = %q", cfg.porID("web").Grupo)
+	}
+	if cfg.Servicos[0].ID != "web" {
+		t.Fatalf("o projeto deveria ter ido para a frente do db: %s", cfg.Servicos[0].ID)
+	}
+
+	if resp := chamar(t, h, http.MethodPost, "/api/servicos/web/mover", `{"grupo":"fantasma"}`); resp.Code != http.StatusBadRequest {
+		t.Fatalf("grupo inexistente deveria dar 400, veio %d", resp.Code)
+	}
+}
+
+func TestReiniciarParaEDepoisSobe(t *testing.T) {
+	h, g := servidorTeste(t, map[string]comportamento{"db": {jaPronto: true}})
+	g.marcar("db", StatusPronto, "")
+
+	resp := chamar(t, h, http.MethodPost, "/api/reiniciar", `{"ids":["db"]}`)
+	if resp.Code != http.StatusOK {
+		t.Fatalf("reiniciar: %d %s", resp.Code, resp.Body)
+	}
+
+	fake := g.exec.(*execFake)
+	// A subida roda em segundo plano: espera ela registrar o inicio antes de conferir.
+	// Parar limpa o "jaPronto" do fake, entao a subida seguinte precisa iniciar de verdade.
+	limite := time.Now().Add(3 * time.Second)
+	for time.Now().Before(limite) {
+		if ordem, _, _ := fake.instantaneo(); contem(ordem, "db") {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	ordem, _, parados := fake.instantaneo()
+	if !contem(parados, "db") {
+		t.Fatal("o projeto nao foi parado antes de subir")
+	}
+	if !contem(ordem, "db") {
+		t.Fatalf("o projeto nao voltou a subir: %v", ordem)
+	}
+}
+
+func TestAbrirPastaRecusaProjetoDesconhecido(t *testing.T) {
+	h, _ := servidorTeste(t, nil)
+	resp := chamar(t, h, http.MethodPost, "/api/abrir", `{"id":"fantasma","alvo":"pasta"}`)
+	if resp.Code != http.StatusBadRequest {
+		t.Fatalf("esperava 400, veio %d", resp.Code)
+	}
+}
+
+func TestCaminhoDoProjeto(t *testing.T) {
+	g, _, _ := gerenteTeste(t, nil)
+
+	caminhoApp, err := g.Caminho("api")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if filepath.Base(caminhoApp) != "backend" {
+		t.Fatalf("caminho da app = %q", caminhoApp)
+	}
+
+	// Para servico docker vale a pasta do arquivo compose, nao o arquivo.
+	caminhoDocker, err := g.Caminho("db")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if filepath.Ext(caminhoDocker) == ".yml" {
+		t.Fatalf("deveria devolver a pasta, veio o arquivo: %q", caminhoDocker)
+	}
+	if _, err := g.Caminho("fantasma"); err == nil {
+		t.Fatal("projeto inexistente deveria dar erro")
+	}
+}
+
 func TestInterfaceEstaEmbutidaNoBinario(t *testing.T) {
 	h, _ := servidorTeste(t, nil)
-	for _, caminho := range []string{"/", "/style.css", "/app.js"} {
+	for _, caminho := range []string{"/", "/style.css", "/app.js", "/vendor/vue.global.prod.js"} {
 		resp := chamar(t, h, http.MethodGet, caminho, "")
 		if resp.Code != http.StatusOK {
 			t.Fatalf("%s deveria ser servido pelo binario, veio %d", caminho, resp.Code)

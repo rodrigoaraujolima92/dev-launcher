@@ -145,6 +145,24 @@ func matarArvore(ctx context.Context, pid int) error {
 	return err
 }
 
+// abrirNoSistema abre a pasta do projeto no Explorer ou no VS Code. O caminho vem sempre do
+// config (resolvido pelo Gerente), nunca direto do navegador.
+func abrirNoSistema(ctx context.Context, caminho, alvo string) error {
+	switch alvo {
+	case "editor":
+		if !comandoExiste("code") {
+			return fmt.Errorf("o comando 'code' (VS Code) nao esta no PATH")
+		}
+		// O 'code' no Windows e um .cmd que devolve na hora; nao segura o processo.
+		return exec.CommandContext(ctx, "code", caminho).Start()
+	case "pasta", "":
+		// O explorer devolve codigo 1 mesmo quando abre a janela: Start() e o suficiente.
+		return exec.CommandContext(ctx, "explorer", caminho).Start()
+	default:
+		return fmt.Errorf("alvo desconhecido: %s", alvo)
+	}
+}
+
 // limparANSI tira as sequencias de escape do log (cores do vue-cli, spinners do maven)
 // para o texto chegar legivel no navegador.
 func limparANSI(s string) string {

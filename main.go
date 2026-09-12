@@ -193,6 +193,43 @@ func rotas(g *Gerente, raiz string) http.Handler {
 		responderJSON(w, http.StatusOK, map[string]any{"id": id, "config": g.Config()})
 	})
 
+	mux.HandleFunc("POST /api/servicos/{id}/mover", func(w http.ResponseWriter, r *http.Request) {
+		var corpo struct {
+			Grupo string `json:"grupo"`
+			Antes string `json:"antes"`
+		}
+		if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<16)).Decode(&corpo); err != nil {
+			responderErro(w, http.StatusBadRequest, err)
+			return
+		}
+		if err := g.MoverServico(r.PathValue("id"), corpo.Grupo, corpo.Antes); err != nil {
+			responderErro(w, http.StatusBadRequest, err)
+			return
+		}
+		responderJSON(w, http.StatusOK, map[string]any{"config": g.Config()})
+	})
+
+	mux.HandleFunc("POST /api/abrir", func(w http.ResponseWriter, r *http.Request) {
+		var corpo struct {
+			ID   string `json:"id"`
+			Alvo string `json:"alvo"`
+		}
+		if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<16)).Decode(&corpo); err != nil {
+			responderErro(w, http.StatusBadRequest, err)
+			return
+		}
+		caminho, err := g.Caminho(corpo.ID)
+		if err != nil {
+			responderErro(w, http.StatusBadRequest, err)
+			return
+		}
+		if err := abrirNoSistema(r.Context(), caminho, corpo.Alvo); err != nil {
+			responderErro(w, http.StatusBadRequest, err)
+			return
+		}
+		responderJSON(w, http.StatusOK, map[string]any{"caminho": caminho})
+	})
+
 	mux.HandleFunc("DELETE /api/servicos/{id}", func(w http.ResponseWriter, r *http.Request) {
 		if err := g.RemoverServico(r.PathValue("id")); err != nil {
 			responderErro(w, http.StatusBadRequest, err)
@@ -344,6 +381,34 @@ func rotas(g *Gerente, raiz string) http.Handler {
 			return
 		}
 		responderJSON(w, http.StatusOK, map[string]any{"erros": []string{}})
+	})
+
+	mux.HandleFunc("POST /api/reiniciar", func(w http.ResponseWriter, r *http.Request) {
+		ids, err := lerIDs(w, r)
+		if err != nil {
+			responderErro(w, http.StatusBadRequest, err)
+			return
+		}
+		// Para primeiro e sobe depois: derrubar em bloco evita que um servico reiniciado
+		// ache que a dependencia continua no ar so porque a porta ainda nao fechou.
+		if erros := g.Parar(r.Context(), ids); len(erros) > 0 {
+			msgs := make([]string, 0, len(erros))
+			for _, e := range erros {
+				msgs = append(msgs, e.Error())
+			}
+			responderJSON(w, http.StatusOK, map[string]any{"erros": msgs})
+			return
+		}
+		plano, err := g.Subir(context.Background(), ids)
+		if err != nil {
+			codigo := http.StatusBadRequest
+			if errors.Is(err, ErrSubidaEmAndamento) {
+				codigo = http.StatusConflict
+			}
+			responderErro(w, codigo, err)
+			return
+		}
+		responderJSON(w, http.StatusOK, plano)
 	})
 
 	mux.HandleFunc("GET /api/logs", func(w http.ResponseWriter, r *http.Request) {

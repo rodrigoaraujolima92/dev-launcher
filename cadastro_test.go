@@ -188,6 +188,88 @@ func TestRemoverServicoDesconhecido(t *testing.T) {
 }
 
 // ------------------------------------------------------------------
+// mover (arrastar e soltar)
+// ------------------------------------------------------------------
+
+func ordemDe(cfg *Config) []string {
+	out := []string{}
+	for _, s := range cfg.Servicos {
+		out = append(out, s.ID+"@"+s.Grupo)
+	}
+	return out
+}
+
+func TestMoverServicoTrocaDeGrupoENaoQuebraDependencia(t *testing.T) {
+	cfg := configTeste() // db@infra rabbit@infra api@api web@web
+
+	if err := moverServico(cfg, "web", "infra", ""); err != nil {
+		t.Fatalf("mover: %v", err)
+	}
+	if cfg.porID("web").Grupo != "infra" {
+		t.Fatalf("grupo = %q", cfg.porID("web").Grupo)
+	}
+	// Sem referencia, entra logo depois do ultimo do grupo de destino.
+	if !reflect.DeepEqual(ordemDe(cfg), []string{"db@infra", "rabbit@infra", "web@infra", "api@api"}) {
+		t.Fatalf("ordem = %v", ordemDe(cfg))
+	}
+	// Mudar de grupo nao mexe em quem espera quem.
+	if !reflect.DeepEqual(cfg.porID("web").Depende, []string{"api"}) {
+		t.Fatalf("dependencias mudaram: %v", cfg.porID("web").Depende)
+	}
+	if err := cfg.validar(); err != nil {
+		t.Fatalf("config invalido apos mover: %v", err)
+	}
+}
+
+func TestMoverServicoPosicionaAntesDoAlvo(t *testing.T) {
+	cfg := configTeste()
+
+	// Soltou "api" em cima do "db": entra na frente dele, no grupo do db.
+	if err := moverServico(cfg, "api", "infra", "db"); err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(ordemDe(cfg), []string{"api@infra", "db@infra", "rabbit@infra", "web@web"}) {
+		t.Fatalf("ordem = %v", ordemDe(cfg))
+	}
+}
+
+func TestMoverServicoReordenaDentroDoMesmoGrupo(t *testing.T) {
+	cfg := configTeste()
+
+	if err := moverServico(cfg, "rabbit", "infra", "db"); err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(ordemDe(cfg), []string{"rabbit@infra", "db@infra", "api@api", "web@web"}) {
+		t.Fatalf("ordem = %v", ordemDe(cfg))
+	}
+}
+
+func TestMoverServicoEmCimaDeSiMesmoNaoFazNada(t *testing.T) {
+	cfg := configTeste()
+	antes := ordemDe(cfg)
+
+	if err := moverServico(cfg, "api", "api", "api"); err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(ordemDe(cfg), antes) {
+		t.Fatalf("ordem mudou: %v", ordemDe(cfg))
+	}
+}
+
+func TestMoverServicoRecusaAlvoDesconhecido(t *testing.T) {
+	cfg := configTeste()
+	if err := moverServico(cfg, "api", "fantasma", ""); err == nil {
+		t.Fatal("grupo inexistente deveria dar erro")
+	}
+	if err := moverServico(cfg, "fantasma", "api", ""); err == nil {
+		t.Fatal("servico inexistente deveria dar erro")
+	}
+	if err := moverServico(cfg, "api", "infra", "fantasma"); err == nil {
+		t.Fatal("referencia inexistente deveria dar erro")
+	}
+}
+
+// ------------------------------------------------------------------
 // grupos
 // ------------------------------------------------------------------
 

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"path/filepath"
 	"sync"
 	"time"
 )
@@ -271,6 +272,26 @@ func (g *Gerente) SalvarServico(entrada EntradaServico) (string, error) {
 
 func (g *Gerente) RemoverServico(id string) error {
 	return g.mutar(func(cfg *Config) error { return removerServico(cfg, id) })
+}
+
+// MoverServico e o destino do arrastar-e-soltar: troca grupo e posicao de uma vez.
+func (g *Gerente) MoverServico(id, grupo, antes string) error {
+	return g.mutar(func(cfg *Config) error { return moverServico(cfg, id, grupo, antes) })
+}
+
+// Caminho devolve a pasta do projeto (ou a do arquivo compose) ja resolvida.
+func (g *Gerente) Caminho(id string) (string, error) {
+	s := g.servico(id)
+	if s == nil {
+		return "", fmt.Errorf("servico desconhecido: %s", id)
+	}
+	if s.Tipo == TipoApp {
+		return caminhoAbsoluto(g.raiz, s.Dir), nil
+	}
+	if s.Compose == nil {
+		return "", fmt.Errorf("%s nao tem pasta para abrir", id)
+	}
+	return filepath.Dir(caminhoAbsoluto(g.raiz, s.Compose.Arquivo)), nil
 }
 
 func (g *Gerente) SalvarGrupo(id, nome string) (string, error) {

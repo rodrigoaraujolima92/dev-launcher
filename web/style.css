@@ -19,6 +19,9 @@
 
 * { box-sizing: border-box; }
 
+/* Enquanto o Vue nao monta, a pagina fica em branco em vez de piscar o template cru. */
+[v-cloak] { display: none; }
+
 html, body {
   margin: 0;
   min-height: 100%;
@@ -553,6 +556,62 @@ main {
   border-radius: var(--raio);
 }
 
+.conta-grupo {
+  padding: 0 6px;
+  font-size: 10px;
+  color: var(--fraco);
+  border: 1px solid var(--linha);
+  border-radius: 999px;
+}
+
+/* ---------------- arrastar e soltar ---------------- */
+
+.cartao { cursor: grab; }
+.cartao:active { cursor: grabbing; }
+.cartao.arrastando { opacity: 0.35; }
+
+/* Linha de insercao: o cartao entra ACIMA do que estiver marcado. */
+.cartao.alvo-antes { box-shadow: 0 -3px 0 -1px var(--ambar); }
+
+.grupo-titulo.alvo-grupo span:first-child, .grupo-vazio.alvo-grupo { color: var(--ambar); }
+.grupo-vazio.alvo-grupo { border-color: var(--ambar); background: var(--ambar-fraco); }
+
+/* Os controles do cartao nao devem iniciar arraste junto. */
+.controles, .marcador, .editor-dep { cursor: default; }
+
+/* ---------------- menu do cartao ---------------- */
+
+.menu-cartao { position: relative; }
+.menu-cartao summary { list-style: none; }
+.menu-cartao summary::-webkit-details-marker { display: none; }
+
+.opcoes-menu {
+  position: absolute;
+  z-index: 16;
+  right: 0;
+  top: 26px;
+  display: flex;
+  flex-direction: column;
+  min-width: 160px;
+  padding: 5px;
+  background: #0c1211;
+  border: 1px solid var(--linha-forte);
+  border-radius: var(--raio);
+  box-shadow: 0 14px 30px rgba(0, 0, 0, 0.55);
+}
+.opcoes-menu button {
+  padding: 5px 8px;
+  font-family: var(--mono);
+  font-size: 11.5px;
+  color: var(--texto);
+  text-align: left;
+  background: none;
+  border: 0;
+  border-radius: 2px;
+  cursor: pointer;
+}
+.opcoes-menu button:hover { color: var(--ambar); background: var(--ambar-fraco); }
+
 /* ---------------- modal ---------------- */
 
 .modal { position: fixed; inset: 0; z-index: 50; display: grid; place-items: center; }
@@ -598,6 +657,10 @@ main {
   border-top: 1px solid var(--linha);
 }
 .modal-acoes .esquerda { margin-right: auto; }
+.botao.perigo { color: var(--vermelho); border-color: rgba(255, 98, 87, 0.45); }
+.botao.perigo:hover { color: #fff; background: rgba(255, 98, 87, 0.2); border-color: var(--vermelho); }
+.botao.primario.perigo { color: #170a0a; background: var(--vermelho); border-color: var(--vermelho); }
+.botao.primario.perigo:hover { background: #ff7a70; border-color: #ff7a70; }
 
 /* ---------------- formulario ---------------- */
 

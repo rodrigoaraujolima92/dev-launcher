@@ -625,6 +625,79 @@ func conferirCaminhos(s *Servico, raizProjeto, raizNavegacao string, livre bool)
 	return nil
 }
 
+// moverServico troca o grupo e/ou a posicao do projeto - e o que o arrastar-e-soltar da
+// tela usa. "antes" e o id do projeto na frente do qual ele deve ficar; vazio joga para o
+// fim do grupo de destino.
+func moverServico(cfg *Config, id, grupo, antes string) error {
+	novo := clonarConfig(cfg)
+	s := novo.porID(id)
+	if s == nil {
+		return fmt.Errorf("servico desconhecido: %s", id)
+	}
+	if grupo == "" {
+		grupo = s.Grupo
+	}
+	if novo.grupoPorID(grupo) == nil {
+		return fmt.Errorf("grupo desconhecido: %s", grupo)
+	}
+	if antes == id {
+		return nil // soltou em cima de si mesmo: nada a fazer
+	}
+	if antes != "" && novo.porID(antes) == nil {
+		return fmt.Errorf("servico desconhecido: %s", antes)
+	}
+	s.Grupo = grupo
+
+	restante := []*Servico{}
+	for _, x := range novo.Servicos {
+		if x.ID != id {
+			restante = append(restante, x)
+		}
+	}
+
+	saida := make([]*Servico, 0, len(novo.Servicos))
+	inserido := false
+	if antes != "" {
+		for _, x := range restante {
+			if x.ID == antes {
+				saida = append(saida, s)
+				inserido = true
+			}
+			saida = append(saida, x)
+		}
+	} else {
+		// Sem referencia: entra logo depois do ultimo do mesmo grupo. Jogar no fim da lista
+		// geral funcionaria, mas a ordem dentro da secao ficaria estranha.
+		ultimo := -1
+		for i, x := range restante {
+			if x.Grupo == grupo {
+				ultimo = i
+			}
+		}
+		if ultimo < 0 {
+			// Grupo de destino vazio: vai para o fim da lista. Colocar no inicio jogaria o
+			// cartao para antes de todo mundo sem motivo.
+			saida = append(saida, restante...)
+			saida = append(saida, s)
+		} else {
+			saida = append(saida, restante[:ultimo+1]...)
+			saida = append(saida, s)
+			saida = append(saida, restante[ultimo+1:]...)
+		}
+		inserido = true
+	}
+	if !inserido {
+		saida = append(saida, s)
+	}
+	novo.Servicos = saida
+
+	if err := novo.validar(); err != nil {
+		return err
+	}
+	*cfg = *novo
+	return nil
+}
+
 // removerServico apaga o servico e limpa as sobras: dependencias de outros servicos e
 // citacoes nos perfis. Sem isso o config ficaria invalido no proximo salvamento.
 func removerServico(cfg *Config, id string) error {

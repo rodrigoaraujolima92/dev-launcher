@@ -12,115 +12,361 @@
 <body>
 <div class="textura" aria-hidden="true"></div>
 
-<header class="topo">
-  <div class="marca">
-    <span class="sigla" aria-hidden="true">ADT</span>
-    <div class="titulo">
-      <h1>dev launcher</h1>
-      <p id="subtitulo">controle de subida do ambiente local</p>
+<div id="app" v-cloak>
+  <header class="topo">
+    <div class="marca">
+      <span class="sigla" aria-hidden="true">ADT</span>
+      <div class="titulo">
+        <h1>dev launcher</h1>
+        <p>{{ raiz }}</p>
+      </div>
     </div>
-  </div>
 
-  <div class="medidores" id="medidores"></div>
+    <div class="medidores">
+      <div class="medidor pronto"><b>{{ contagem.pronto }}</b><span>no ar</span></div>
+      <div class="medidor andando"><b>{{ contagem.andando }}</b><span>subindo</span></div>
+      <div class="medidor falha"><b>{{ contagem.falha }}</b><span>falha</span></div>
+    </div>
 
-  <div class="acoes-topo">
-    <button class="botao" id="btn-parar" type="button">parar selecionados</button>
-    <button class="botao primario" id="btn-subir" type="button" aria-label="subir servicos selecionados">
-      <span class="rotulo">subir selecionados</span>
-      <span class="contador" id="contador-subir">0</span>
-    </button>
-  </div>
-</header>
+    <div class="acoes-topo">
+      <button class="botao" type="button" @click="parar(selecionados)">parar selecionados</button>
+      <button class="botao" type="button" @click="reiniciar(selecionados)">reiniciar</button>
+      <button class="botao primario" type="button" :class="{ ocupado: subindo }" @click="subir(selecionados)">
+        <span class="rotulo">subir selecionados</span>
+        <span class="contador">{{ plano.ids ? plano.ids.length : selecionados.length }}</span>
+      </button>
+    </div>
+  </header>
 
-<nav class="barra-perfis" aria-label="perfis de execucao">
-  <span class="rotulo-barra">perfis</span>
-  <div class="perfis" id="perfis"></div>
-  <div class="acoes-barra">
-    <button class="mini" id="btn-novo-perfil" type="button">salvar selecao como perfil</button>
-    <button class="mini" id="btn-novo-grupo" type="button">novo grupo</button>
-    <button class="mini destaque" id="btn-novo-projeto" type="button">+ novo projeto</button>
-  </div>
-</nav>
+  <nav class="barra-perfis">
+    <span class="rotulo-barra">perfis</span>
+    <div class="perfis">
+      <span v-if="!config.perfis.length" class="dica">nenhum perfil salvo ainda</span>
+      <div v-for="p in config.perfis" :key="p.id" class="perfil"
+           :class="{ ativo: config.perfil_ativo === p.id }"
+           :title="p.servicos.map(nomeDe).join(', ')">
+        <button type="button" class="aplicar" @click="aplicarPerfil(p)">{{ p.nome }}</button>
+        <span class="qtd">{{ p.servicos.length }}</span>
+        <button type="button" class="editar-perfil" title="editar perfil" @click="abrir({ tipo: 'perfil', perfil: p })">⋯</button>
+      </div>
+    </div>
+    <div class="acoes-barra">
+      <button class="mini" type="button" @click="salvarPerfilAtual">salvar selecao como perfil</button>
+      <button class="mini" type="button" @click="novoGrupo">novo grupo</button>
+      <button class="mini destaque" type="button" @click="formularioServico(null)">+ novo projeto</button>
+    </div>
+  </nav>
 
-<main>
-  <section class="coluna" id="servicos" aria-label="servicos"></section>
+  <main>
+    <section class="coluna">
+      <template v-for="(grupo, gi) in config.grupos" :key="grupo.id">
+        <div class="grupo-titulo" :class="{ 'alvo-grupo': arraste.grupo === grupo.id }"
+             @dragover.prevent="arraste.grupo = grupo.id" @drop.prevent="soltar(grupo.id, '')">
+          <span>{{ grupo.nome }}</span>
+          <span class="conta-grupo">{{ servicosDe(grupo.id).length }}</span>
+          <div class="acoes-grupo">
+            <button type="button" @click="formularioServico(null, grupo.id)">+ projeto</button>
+            <button type="button" @click="subir(idsDoGrupo(grupo.id))">subir</button>
+            <button type="button" @click="parar(idsDoGrupo(grupo.id))">parar</button>
+            <button type="button" @click="reiniciar(idsDoGrupo(grupo.id))">reiniciar</button>
+            <button type="button" @click="renomearGrupo(grupo)">renomear</button>
+            <button type="button" :disabled="gi === 0" title="mover para cima" @click="moverGrupo(grupo.id, -1)">↑</button>
+            <button type="button" :disabled="gi === config.grupos.length - 1" title="mover para baixo" @click="moverGrupo(grupo.id, 1)">↓</button>
+            <button type="button" @click="apagarGrupo(grupo)">apagar</button>
+          </div>
+        </div>
 
-  <aside class="lateral">
-    <section class="painel" aria-labelledby="tit-plano">
-      <header class="painel-topo">
-        <h2 id="tit-plano">plano de subida</h2>
-        <span class="dica">quem espera quem</span>
-      </header>
-      <div id="plano" class="plano"></div>
+        <p v-if="!servicosDe(grupo.id).length" class="grupo-vazio"
+           :class="{ 'alvo-grupo': arraste.grupo === grupo.id }"
+           @dragover.prevent="arraste.grupo = grupo.id" @drop.prevent="soltar(grupo.id, '')">
+          nenhum projeto aqui — arraste um cartao ou use <b>+ projeto</b>.
+        </p>
+
+        <article v-for="s in servicosDe(grupo.id)" :key="s.id" class="cartao"
+                 :data-id="s.id" :data-status="estado(s.id).status"
+                 :class="{ selecionado: s.selecionado, 'em-foco': logAtual === s.id,
+                           arrastando: arraste.id === s.id, 'alvo-antes': arraste.antes === s.id }"
+                 draggable="true"
+                 @dragstart="iniciarArraste($event, s)"
+                 @dragover.prevent="marcarAlvo(grupo.id, s)"
+                 @drop.prevent="soltar(grupo.id, s.id)"
+                 @dragend="limparArraste">
+          <label class="marcador">
+            <input type="checkbox" v-model="s.selecionado" :aria-label="'incluir ' + s.nome + ' na subida'"
+                   @change="aoSelecionar()">
+            <span class="caixa" aria-hidden="true"></span>
+          </label>
+
+          <div class="corpo">
+            <div class="linha-titulo">
+              <span class="led" :data-status="estado(s.id).status" aria-hidden="true"></span>
+              <h3 class="nome">{{ s.nome }}</h3>
+              <span class="etiqueta porta">{{ s.porta ? ':' + s.porta : s.tipo }}</span>
+              <span class="estado-texto" :class="estado(s.id).status">{{ textoEstado(s.id) }}</span>
+            </div>
+
+            <p class="detalhe">
+              {{ s.tipo === 'docker'
+                 ? 'docker compose · ' + s.compose.servico + ' (' + (s.container || '-') + ')'
+                 : s.dir + ' · ' + s.cmd }}
+            </p>
+
+            <div class="dependencias">
+              <span class="rotulo-dep">espera</span>
+              <div class="chips">
+                <span v-if="!s.depende.length" class="chip vazio">ninguem</span>
+                <span v-for="d in s.depende" :key="d" class="chip">{{ nomeDe(d) }}</span>
+              </div>
+              <details class="editor-dep" :open="depAberta === s.id" @toggle="depAberta = $event.target.open ? s.id : null">
+                <summary title="editar dependencias">editar</summary>
+                <div class="opcoes-dep">
+                  <label v-for="outro in outrosServicos(s.id)" :key="outro.id">
+                    <input type="checkbox" :value="outro.id" v-model="s.depende" @change="salvarEdicao(s)">
+                    {{ outro.nome }}
+                  </label>
+                </div>
+              </details>
+            </div>
+          </div>
+
+          <div class="controles">
+            <div class="modo" v-if="s.tipo === 'app'" role="group" aria-label="modo de execucao">
+              <button type="button" class="modo-opcao" :aria-pressed="(s.modo || 'gerenciado') === 'gerenciado' ? 'true' : 'false'"
+                      @click="trocarModo(s, 'gerenciado')">log aqui</button>
+              <button type="button" class="modo-opcao" :aria-pressed="s.modo === 'terminal' ? 'true' : 'false'"
+                      :title="temWt ? '' : 'Windows Terminal nao encontrado - cai para modo gerenciado'"
+                      @click="trocarModo(s, 'terminal')">aba do wt</button>
+            </div>
+            <div class="botoes">
+              <a v-if="s.url" class="link-url" :href="s.url" target="_blank" rel="noopener">abrir</a>
+              <button type="button" class="mini" @click="mostrarLog(s.id)">log</button>
+              <button type="button" class="mini" @click="subir([s.id])">subir</button>
+              <button type="button" class="mini" @click="reiniciar([s.id])" title="parar e subir de novo">↻</button>
+              <button type="button" class="mini perigo" @click="parar([s.id])">parar</button>
+              <details class="menu-cartao" :open="menuAberto === s.id" @toggle="menuAberto = $event.target.open ? s.id : null">
+                <summary class="mini" title="mais acoes">⋯</summary>
+                <div class="opcoes-menu">
+                  <button type="button" @click="formularioServico(s); menuAberto = null">editar projeto</button>
+                  <button type="button" @click="abrirNoSistema(s, 'pasta')">abrir pasta</button>
+                  <button type="button" @click="abrirNoSistema(s, 'editor')">abrir no VS Code</button>
+                  <button type="button" @click="copiarComando(s)">copiar comando</button>
+                </div>
+              </details>
+            </div>
+          </div>
+        </article>
+      </template>
     </section>
 
-    <section class="painel painel-log" aria-labelledby="tit-log">
-      <header class="painel-topo">
-        <h2 id="tit-log">log</h2>
-        <span class="dica" id="log-alvo">selecione um servico</span>
+    <aside class="lateral">
+      <section class="painel">
+        <header class="painel-topo">
+          <h2>plano de subida</h2>
+          <span class="dica">quem espera quem</span>
+        </header>
+        <div class="plano">
+          <p v-if="!plano.ondas || !plano.ondas.length" class="plano-vazio">nada marcado.</p>
+          <div v-for="(onda, i) in plano.ondas" :key="i" class="onda">
+            <div class="onda-num">{{ i + 1 }}a</div>
+            <div class="onda-itens">
+              <span v-for="id in onda" :key="id" class="onda-item" :data-status="estado(id).status">{{ nomeDe(id) }}</span>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="painel painel-log">
+        <header class="painel-topo">
+          <h2>log</h2>
+          <span class="dica">{{ logAtual ? nomeDe(logAtual) : 'selecione um servico' }}</span>
+        </header>
+        <pre class="log" ref="log" tabindex="0"></pre>
+      </section>
+    </aside>
+  </main>
+
+  <div class="avisos" role="status" aria-live="polite">
+    <div v-for="a in avisos" :key="a.id" class="aviso" :class="a.tipo">{{ a.texto }}</div>
+  </div>
+
+  <!-- ---------------- modais ---------------- -->
+  <div class="modal" v-if="modais.length">
+    <div class="modal-fundo" @click="fecharTopo"></div>
+    <div class="modal-caixa" role="dialog" aria-modal="true">
+      <header class="modal-topo">
+        <h2>{{ tituloModal }}</h2>
+        <button type="button" class="mini" @click="fecharTopo" aria-label="fechar">esc</button>
       </header>
-      <pre id="log" class="log" tabindex="0"></pre>
-    </section>
-  </aside>
-</main>
 
-<div class="avisos" id="avisos" role="status" aria-live="polite"></div>
+      <div class="modal-corpo">
+        <!-- texto simples -->
+        <div v-if="topo.tipo === 'texto'" class="campo largo">
+          <span class="rotulo-campo">{{ topo.rotulo }}</span>
+          <input type="text" v-model="topo.valor" ref="entradaTexto" @keydown.enter="confirmarTexto">
+        </div>
 
-<div class="modal" id="modal" hidden>
-  <div class="modal-fundo" data-fechar></div>
-  <div class="modal-caixa" role="dialog" aria-modal="true" aria-labelledby="modal-titulo">
-    <header class="modal-topo">
-      <h2 id="modal-titulo"></h2>
-      <button type="button" class="mini" data-fechar aria-label="fechar">esc</button>
-    </header>
-    <div class="modal-corpo" id="modal-corpo"></div>
-    <footer class="modal-acoes" id="modal-acoes"></footer>
+        <p v-else-if="topo.tipo === 'confirmar'" class="ajuda">{{ topo.texto }}</p>
+
+        <p v-else-if="topo.tipo === 'perfil'" class="ajuda">
+          {{ topo.perfil.servicos.length }} projeto(s):
+          {{ topo.perfil.servicos.map(nomeDe).join(', ') }}
+        </p>
+
+        <!-- seletor de pastas -->
+        <template v-else-if="topo.tipo === 'pasta'">
+          <div class="trilha">pasta atual: <b>{{ pastas.caminho }}</b></div>
+          <div class="lista-pastas">
+            <button v-if="pastas.pai && (form.caminho_livre || pastas.caminho !== pastas.raiz)"
+                    type="button" class="item-pasta acima" @click="navegar(pastas.pai)">
+              <span class="nome-pasta">.. subir um nivel</span>
+            </button>
+            <button v-for="item in pastas.itens" :key="item.caminho" type="button" class="item-pasta"
+                    @click="navegar(item.caminho)">
+              <span class="nome-pasta">{{ item.nome }}</span>
+              <span class="marcas">
+                <span v-for="m in item.marcas" :key="m" class="marca">{{ m }}</span>
+              </span>
+            </button>
+          </div>
+        </template>
+
+        <!-- formulario de projeto -->
+        <div v-else-if="topo.tipo === 'servico'" class="campos">
+          <div class="campo">
+            <span class="rotulo-campo">nome</span>
+            <input type="text" v-model="form.nome" placeholder="appdaturma-backend" ref="entradaNome">
+          </div>
+          <div class="campo">
+            <span class="rotulo-campo">grupo</span>
+            <select v-model="form.grupo">
+              <option v-for="g in config.grupos" :key="g.id" :value="g.id">{{ g.nome }}</option>
+            </select>
+          </div>
+
+          <div class="campo largo">
+            <span class="rotulo-campo">tipo</span>
+            <div class="seletor-tipo">
+              <button type="button" :aria-pressed="form.tipo === 'app' ? 'true' : 'false'" @click="form.tipo = 'app'">aplicacao / script</button>
+              <button type="button" :aria-pressed="form.tipo === 'docker' ? 'true' : 'false'" @click="form.tipo = 'docker'">container docker</button>
+            </div>
+          </div>
+
+          <template v-if="form.tipo === 'app'">
+            <div class="campo largo">
+              <span class="rotulo-campo">pasta do projeto</span>
+              <div class="linha-campo">
+                <input type="text" v-model="form.dir" placeholder="permissions-api">
+                <button type="button" class="mini" @click="escolherPasta('dir')">procurar</button>
+              </div>
+              <label class="opcao-livre">
+                <input type="checkbox" v-model="form.caminho_livre">
+                usar caminho fora da pasta de projetos
+              </label>
+            </div>
+            <div class="campo largo">
+              <span class="rotulo-campo">comando</span>
+              <input type="text" v-model="form.cmd" placeholder="npm run dev">
+              <div class="sugestoes">
+                <button v-for="s in form.sugestoes" :key="s.cmd" type="button" class="sugestao" @click="usarSugestao(s)">
+                  {{ s.rotulo }}
+                </button>
+                <span v-if="form.sugestoes && !form.sugestoes.length" class="ajuda">
+                  nenhuma sugestao automatica - escreva o comando.
+                </span>
+              </div>
+              <span class="ajuda">roda no pwsh, dentro da pasta acima</span>
+            </div>
+            <div class="campo">
+              <span class="rotulo-campo">modo</span>
+              <select v-model="form.modo">
+                <option value="gerenciado">log aqui (gerenciado)</option>
+                <option value="terminal">aba do Windows Terminal</option>
+              </select>
+            </div>
+          </template>
+
+          <template v-else>
+            <div class="campo largo">
+              <span class="rotulo-campo">arquivo compose</span>
+              <div class="linha-campo">
+                <input type="text" v-model="form.composeArquivo" placeholder="docker appdaturma/docker-compose.yml">
+                <button type="button" class="mini" @click="escolherPasta('compose')">procurar</button>
+              </div>
+            </div>
+            <div class="campo">
+              <span class="rotulo-campo">projeto compose</span>
+              <input type="text" v-model="form.composeProjeto" placeholder="dockerappdaturma">
+              <span class="ajuda">mantenha o nome ja usado na maquina</span>
+            </div>
+            <div class="campo">
+              <span class="rotulo-campo">servico no compose</span>
+              <select v-model="form.composeServico">
+                <option v-for="n in form.servicosCompose" :key="n" :value="n">{{ n }}</option>
+              </select>
+            </div>
+            <div class="campo">
+              <span class="rotulo-campo">nome do container</span>
+              <input type="text" v-model="form.container" placeholder="db">
+            </div>
+          </template>
+
+          <div class="campo">
+            <span class="rotulo-campo">porta</span>
+            <input type="number" v-model.number="form.porta" min="0" max="65535" placeholder="7003">
+          </div>
+          <div class="campo">
+            <span class="rotulo-campo">url (botao abrir)</span>
+            <input type="text" v-model="form.url" placeholder="http://localhost:7003">
+          </div>
+          <div class="campo">
+            <span class="rotulo-campo">como saber que ficou pronto</span>
+            <select v-model="form.prontoTipo">
+              <option value="porta">porta atendendo</option>
+              <option value="http">http respondendo</option>
+              <option value="comando">comando com saida 0</option>
+            </select>
+          </div>
+          <div class="campo">
+            <span class="rotulo-campo">detalhe da checagem</span>
+            <input type="text" v-model="form.prontoDetalhe">
+            <span class="ajuda">porta, url ou comando conforme a opcao ao lado</span>
+          </div>
+          <div class="campo">
+            <span class="rotulo-campo">timeout (segundos)</span>
+            <input type="number" v-model.number="form.timeout" min="1">
+          </div>
+
+          <div class="campo largo">
+            <span class="rotulo-campo">espera por</span>
+            <div class="lista-dep">
+              <label v-for="outro in outrosServicos(form.id)" :key="outro.id">
+                <input type="checkbox" :value="outro.id" v-model="form.depende">
+                {{ outro.nome }}
+              </label>
+            </div>
+            <span class="ajuda">o projeto so arranca quando estes estiverem no ar</span>
+          </div>
+        </div>
+      </div>
+
+      <footer class="modal-acoes">
+        <button v-if="topo.tipo === 'servico' && form.id" type="button" class="botao perigo esquerda" @click="apagarServico">apagar</button>
+        <button v-if="topo.tipo === 'perfil'" type="button" class="botao perigo esquerda" @click="apagarPerfil(topo.perfil)">apagar</button>
+        <button v-if="topo.tipo === 'perfil'" type="button" class="botao" @click="renomearPerfil(topo.perfil)">renomear</button>
+
+        <button type="button" class="botao" @click="fecharTopo">cancelar</button>
+
+        <button v-if="topo.tipo === 'texto'" type="button" class="botao primario" @click="confirmarTexto">confirmar</button>
+        <button v-else-if="topo.tipo === 'confirmar'" type="button" class="botao primario perigo" @click="topo.resolver(true); fecharTopo(true)">confirmar</button>
+        <button v-else-if="topo.tipo === 'pasta'" type="button" class="botao primario" @click="usarPasta">usar esta pasta</button>
+        <button v-else-if="topo.tipo === 'servico'" type="button" class="botao primario" @click="salvarServico">salvar</button>
+        <button v-else-if="topo.tipo === 'perfil'" type="button" class="botao primario" @click="gravarPerfilAtual(topo.perfil)">gravar selecao atual</button>
+      </footer>
+    </div>
   </div>
 </div>
 
-<template id="modelo-servico">
-  <article class="cartao" data-id="">
-    <label class="marcador">
-      <input type="checkbox" class="chk-selecao">
-      <span class="caixa" aria-hidden="true"></span>
-    </label>
-
-    <div class="corpo">
-      <div class="linha-titulo">
-        <span class="led" data-status="parado" aria-hidden="true"></span>
-        <h3 class="nome"></h3>
-        <span class="etiqueta porta"></span>
-        <span class="estado-texto"></span>
-      </div>
-
-      <p class="detalhe"></p>
-
-      <div class="dependencias">
-        <span class="rotulo-dep">espera</span>
-        <div class="chips"></div>
-        <details class="editor-dep">
-          <summary title="editar dependencias">editar</summary>
-          <div class="opcoes-dep"></div>
-        </details>
-      </div>
-    </div>
-
-    <div class="controles">
-      <div class="modo" role="group" aria-label="modo de execucao">
-        <button type="button" class="modo-opcao" data-modo="gerenciado">log aqui</button>
-        <button type="button" class="modo-opcao" data-modo="terminal">aba do wt</button>
-      </div>
-      <div class="botoes">
-        <a class="link-url" target="_blank" rel="noopener" hidden>abrir</a>
-        <button type="button" class="mini acao-editar">editar</button>
-        <button type="button" class="mini acao-log">log</button>
-        <button type="button" class="mini acao-subir">subir</button>
-        <button type="button" class="mini perigo acao-parar">parar</button>
-      </div>
-    </div>
-  </article>
-</template>
-
+<script src="vendor/vue.global.prod.js"></script>
 <script src="app.js"></script>
 </body>
 </html>

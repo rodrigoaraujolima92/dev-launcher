@@ -14,6 +14,10 @@ Sem interface, so as abas do Windows Terminal: `../start-dev.ps1`.
 
 - **Um binario so.** A interface (`web/`) vai embutida via `go:embed`; nao precisa de Node,
   npm nem dependencia externa - so a stdlib do Go.
+- **Vue 3 sem passo de build.** `web/vendor/vue.global.prod.js` e servido pelo proprio
+  binario (nada de CDN: funciona offline). A tela e reativa, entao uma acao repinta so o que
+  mudou em vez de redesenhar a lista inteira - trocar de aba do log ou marcar um projeto nao
+  recria os cartoes. Para atualizar o Vue, troque o arquivo em `web/vendor/`.
 - **Escuta apenas em `127.0.0.1`** e recusa requisicao cujo `Host` nao seja localhost.
   O servidor executa comandos da maquina, entao nada de expor na rede.
 - **Esperar de verdade.** Um servico so entra na fila do proximo quando fica *pronto*
@@ -21,12 +25,24 @@ Sem interface, so as abas do Windows Terminal: `../start-dev.ps1`.
 - **Nao reinicia o que ja esta no ar.** Containers sobem com `--no-recreate`; app que ja
   esta atendendo na porta e marcada como "ja estava no ar".
 
+## Acoes
+
+**Por projeto:** `log`, `subir`, `↻` (reiniciar: para e sobe de novo), `parar` e o menu `⋯`
+com editar, abrir a pasta no Explorer, abrir no VS Code e copiar o comando.
+
+**Por grupo:** o cabecalho de cada secao tem `+ projeto`, `subir`, `parar`, `reiniciar`,
+`renomear`, `↑ ↓` e `apagar` - entao da para derrubar uma empresa inteira sem mexer no
+resto.
+
+**No topo:** parar / reiniciar / subir o que estiver marcado.
+
 ## Grupos
 
 As secoes da tela sao editaveis: crie um grupo por empresa ou produto (appdaturma,
-photonow, isugar), renomeie, reordene com as setas e mova cada projeto pelo campo **grupo**
-do formulario. Grupo so pode ser apagado quando esta vazio - apagar em cascata levaria
-projeto junto sem querer.
+photonow, isugar), renomeie, reordene com as setas e **arraste o cartao** de um grupo para
+outro - soltando em cima de outro projeto ele entra na frente dele, soltando no cabecalho
+vai para o fim da secao. Grupo so pode ser apagado quando esta vazio - apagar em cascata
+levaria projeto junto sem querer.
 
 ## Perfis de execucao
 
@@ -127,7 +143,10 @@ Config da primeira versao (sem `grupos`/`perfis`) e migrado sozinho ao abrir.
 | GET | `/api/eventos` | SSE: estado, log, config, fim de subida |
 | POST | `/api/subir` · `/api/parar` · `/api/plano` | `{"ids": [...]}` |
 | POST | `/api/config` | selecao/modo/dependencias (o que muda a cada clique) |
+| POST | `/api/reiniciar` | `{"ids": [...]}` - para e sobe de novo |
 | POST/DELETE | `/api/servicos` · `/api/servicos/{id}` | cadastro completo |
+| POST | `/api/servicos/{id}/mover` | `{"grupo": "...", "antes": "id ou vazio"}` (arrastar e soltar) |
+| POST | `/api/abrir` | `{"id": "...", "alvo": "pasta\|editor"}` |
 | POST/DELETE | `/api/grupos` · `/api/grupos/ordem` · `/api/grupos/{id}` | grupos |
 | POST/DELETE | `/api/perfis` · `/api/perfis/{id}/aplicar` · `/api/perfis/{id}` | perfis |
 | GET | `/api/pastas` · `/api/inspecionar` | seletor de pastas e sugestoes (`?livre=1` sai da cerca) |
