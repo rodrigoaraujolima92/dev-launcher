@@ -65,7 +65,7 @@
       },
       "timeout": 120,
       "depende": [],
-      "selecionado": false
+      "selecionado": true
     },
     {
       "id": "rabbitmq",
@@ -86,7 +86,7 @@
       },
       "timeout": 120,
       "depende": [],
-      "selecionado": false
+      "selecionado": true
     },
     {
       "id": "mailhog",
@@ -107,7 +107,7 @@
       },
       "timeout": 60,
       "depende": [],
-      "selecionado": false
+      "selecionado": true
     },
     {
       "id": "adminer",
@@ -130,7 +130,7 @@
       "depende": [
         "db"
       ],
-      "selecionado": false
+      "selecionado": true
     },
     {
       "id": "permissions",
@@ -150,7 +150,7 @@
         "db",
         "rabbitmq"
       ],
-      "selecionado": false
+      "selecionado": true
     },
     {
       "id": "contrato",
@@ -169,7 +169,7 @@
       "depende": [
         "db"
       ],
-      "selecionado": false
+      "selecionado": true
     },
     {
       "id": "backend",
@@ -193,7 +193,7 @@
         "permissions",
         "rabbitmq"
       ],
-      "selecionado": false
+      "selecionado": true
     },
     {
       "id": "frontend",
@@ -213,7 +213,7 @@
       "depende": [
         "backend"
       ],
-      "selecionado": false
+      "selecionado": true
     },
     {
       "id": "admin",
@@ -233,7 +233,7 @@
       "depende": [
         "backend"
       ],
-      "selecionado": false
+      "selecionado": true
     },
     {
       "id": "cabine-foto-front",
