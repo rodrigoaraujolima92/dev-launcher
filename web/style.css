@@ -142,6 +142,38 @@ html, body {
   border-radius: 2px;
 }
 .botao[disabled] { opacity: 0.45; cursor: not-allowed; }
+.botao.discreto { color: var(--fraco); background: none; border-color: var(--linha); }
+.botao.discreto:hover { color: var(--vermelho); border-color: var(--vermelho); background: none; }
+
+/* Cortina de "encerrado": a pagina nao tem mais servidor atras, entao para de oferecer
+   botoes que nao funcionariam. */
+.cortina {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: grid;
+  place-items: center;
+  background: rgba(6, 9, 8, 0.93);
+  backdrop-filter: blur(3px);
+}
+.cortina-caixa {
+  max-width: 440px;
+  padding: 26px 30px;
+  text-align: center;
+  background: linear-gradient(180deg, var(--painel-alto), var(--painel));
+  border: 1px solid var(--linha-forte);
+  border-left: 3px solid var(--ambar);
+  border-radius: var(--raio);
+}
+.cortina-caixa h2 {
+  margin: 0 0 10px;
+  font-family: var(--display);
+  font-size: 15px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+}
+.cortina-caixa p { margin: 0 0 6px; font-size: 12px; color: var(--fraco); }
+.cortina-caixa code { color: var(--ambar); }
 .botao.ocupado { animation: pulsar 1.4s ease-in-out infinite; }
 
 @keyframes pulsar {

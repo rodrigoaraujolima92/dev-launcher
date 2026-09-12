@@ -8,14 +8,25 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 )
 
 func servidorTeste(t *testing.T, comp map[string]comportamento) (http.Handler, *Gerente) {
 	t.Helper()
+	h, g, _ := servidorTesteComEncerrar(t, comp)
+	return h, g
+}
+
+// servidorTesteComEncerrar devolve tambem um ponteiro que diz se a rota de encerramento
+// chamou o desligamento.
+func servidorTesteComEncerrar(t *testing.T, comp map[string]comportamento) (http.Handler, *Gerente, *atomic.Bool) {
+	t.Helper()
 	g, _, _ := gerenteTeste(t, comp)
-	return somenteLocal(rotas(g, t.TempDir())), g
+	var chamou atomic.Bool
+	h := somenteLocal(rotas(g, t.TempDir(), func() { chamou.Store(true) }))
+	return h, g, &chamou
 }
 
 func chamar(t *testing.T, h http.Handler, metodo, caminho, corpo string) *httptest.ResponseRecorder {
@@ -383,6 +394,41 @@ func TestCaminhoDoProjeto(t *testing.T) {
 	}
 	if _, err := g.Caminho("fantasma"); err == nil {
 		t.Fatal("projeto inexistente deveria dar erro")
+	}
+}
+
+func TestEncerrarPelaAPI(t *testing.T) {
+	h, _, chamou := servidorTesteComEncerrar(t, nil)
+
+	resp := chamar(t, h, http.MethodPost, "/api/encerrar", "")
+	if resp.Code != http.StatusOK {
+		t.Fatalf("encerrar: %d %s", resp.Code, resp.Body)
+	}
+	// A rota responde antes de desligar, para a tela conseguir avisar; o desligamento vem
+	// logo depois, em outra goroutine.
+	limite := time.Now().Add(3 * time.Second)
+	for time.Now().Before(limite) && !chamou.Load() {
+		time.Sleep(20 * time.Millisecond)
+	}
+	if !chamou.Load() {
+		t.Fatal("a rota respondeu mas nao desligou o launcher")
+	}
+}
+
+func TestEncerrarSoAceitaLocalhost(t *testing.T) {
+	h, _, chamou := servidorTesteComEncerrar(t, nil)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/encerrar", nil)
+	req.Host = "launcher.exemplo.com"
+	resp := httptest.NewRecorder()
+	h.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusForbidden {
+		t.Fatalf("esperava 403, veio %d", resp.Code)
+	}
+	time.Sleep(300 * time.Millisecond)
+	if chamou.Load() {
+		t.Fatal("uma pagina de fora conseguiu derrubar o launcher")
 	}
 }
 

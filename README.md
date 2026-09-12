@@ -6,9 +6,26 @@ quem, agrupa por empresa/produto, salva perfis de execucao e acompanha o log de 
 ```powershell
 ../start-ui.ps1          # compila se precisar, sobe e abre o navegador
 ../start-ui.ps1 -Porta 7011
+../start-ui.ps1 -Encerrar # encerra o launcher que estiver rodando
 ```
 
 Sem interface, so as abas do Windows Terminal: `../start-dev.ps1`.
+
+## Encerrar
+
+Tres caminhos, porque um launcher que subiu sem console (janela oculta, atalho) nao tem
+Ctrl+C:
+
+1. **Ctrl+C** no terminal onde ele esta rodando;
+2. o botao **encerrar** no canto da tela;
+3. **`dev-launcher.exe -encerrar`** (ou `../start-ui.ps1 -Encerrar`) em outro terminal.
+
+Encerrar derruba os projetos em **modo gerenciado** - eles sao filhos do launcher, e deixar
+orfao significaria porta ocupada por um processo que ninguem mais rastreia. Containers
+Docker ficam no ar; eles sao independentes de proposito.
+
+Se a porta ja estiver em uso por outro launcher, ele avisa e mostra como encerrar em vez de
+despejar o erro de bind.
 
 ## Como funciona
 
@@ -72,7 +89,7 @@ dois projetos na mesma porta se confundem.
 
 | Modo | O que faz |
 | --- | --- |
-| `gerenciado` | O launcher segura o processo. Log ao vivo na tela, botao **parar** funciona direto. Ctrl+C no launcher derruba tudo junto. |
+| `gerenciado` | O launcher segura o processo. Log ao vivo na tela, botao **parar** funciona direto. Encerrar o launcher derruba estes junto. |
 | `terminal` | Abre uma aba do Windows Terminal (`wt -w appdaturma`), igual ao `start-dev.ps1`. O log fica na aba; parar usa a porta para achar e matar a arvore de processos. |
 
 ## config.json
@@ -147,6 +164,7 @@ Config da primeira versao (sem `grupos`/`perfis`) e migrado sozinho ao abrir.
 | POST/DELETE | `/api/servicos` · `/api/servicos/{id}` | cadastro completo |
 | POST | `/api/servicos/{id}/mover` | `{"grupo": "...", "antes": "id ou vazio"}` (arrastar e soltar) |
 | POST | `/api/abrir` | `{"id": "...", "alvo": "pasta\|editor"}` |
+| POST | `/api/encerrar` | encerra o proprio launcher |
 | POST/DELETE | `/api/grupos` · `/api/grupos/ordem` · `/api/grupos/{id}` | grupos |
 | POST/DELETE | `/api/perfis` · `/api/perfis/{id}/aplicar` · `/api/perfis/{id}` | perfis |
 | GET | `/api/pastas` · `/api/inspecionar` | seletor de pastas e sugestoes (`?livre=1` sai da cerca) |

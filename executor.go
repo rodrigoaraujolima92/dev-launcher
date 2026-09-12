@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -217,6 +218,29 @@ func (e *ExecutorSO) Parar(ctx context.Context, s *Servico) error {
 		}
 	}
 	return nil
+}
+
+// PararGerenciados derruba tudo que o launcher esta segurando. Chamado no encerramento:
+// sem isso os dev servers ficariam orfaos, segurando porta, e o proximo launcher nao teria
+// mais o PID deles - so daria para matar pela porta, no escuro.
+func (e *ExecutorSO) PararGerenciados(ctx context.Context) []string {
+	e.mu.Lock()
+	pids := map[string]int{}
+	for id, cmd := range e.procs {
+		if cmd.Process != nil {
+			pids[id] = cmd.Process.Pid
+		}
+	}
+	e.mu.Unlock()
+
+	derrubados := []string{}
+	for id, pid := range pids {
+		if err := matarArvore(ctx, pid); err == nil {
+			derrubados = append(derrubados, id)
+		}
+	}
+	sort.Strings(derrubados)
+	return derrubados
 }
 
 func shellDisponivel() string {

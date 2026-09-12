@@ -13,6 +13,14 @@
 <div class="textura" aria-hidden="true"></div>
 
 <div id="app" v-cloak>
+  <div v-if="encerrado" class="cortina">
+    <div class="cortina-caixa">
+      <h2>launcher encerrado</h2>
+      <p>os projetos em modo gerenciado foram derrubados; os containers continuam no ar.</p>
+      <p class="ajuda">para voltar: <code>./start-ui.ps1</code></p>
+    </div>
+  </div>
+
   <header class="topo">
     <div class="marca">
       <span class="sigla" aria-hidden="true">ADT</span>
@@ -29,6 +37,7 @@
     </div>
 
     <div class="acoes-topo">
+      <button class="botao discreto" type="button" title="encerra o proprio launcher" @click="encerrarLauncher">encerrar</button>
       <button class="botao" type="button" @click="parar(selecionados)">parar selecionados</button>
       <button class="botao" type="button" @click="reiniciar(selecionados)">reiniciar</button>
       <button class="botao primario" type="button" :class="{ ocupado: subindo }" @click="subir(selecionados)">

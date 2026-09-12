@@ -40,6 +40,7 @@ createApp({
       pastas: { caminho: "", pai: "", raiz: "", itens: [] },
       arraste: { id: null, grupo: null, antes: null },
       salvandoEm: null,
+      encerrado: false,
     };
   },
 
@@ -174,6 +175,18 @@ createApp({
         if (plano.erros?.length) return plano.erros.forEach((e) => this.avisar(e, "erro"));
         this.plano = plano;
         this.avisar(`reiniciando ${plano.ids.length} projeto(s).`, "ok");
+      } catch (err) {
+        this.avisar(err.message, "erro");
+      }
+    },
+
+    async encerrarLauncher() {
+      const ok = await this.confirmar(
+        "encerrar o launcher? os projetos em modo gerenciado sao derrubados junto (containers ficam no ar).");
+      if (!ok) return;
+      try {
+        await this.enviar("/api/encerrar");
+        this.encerrado = true;
       } catch (err) {
         this.avisar(err.message, "erro");
       }

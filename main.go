@@ -29,6 +29,7 @@ func main() {
 		caminhoCfg  = flag.String("config", "", "caminho do config.json (padrao: ao lado do binario ou ./dev-launcher/config.json)")
 		porta       = flag.Int("porta", 0, "porta da interface web (sobrepoe a do config)")
 		semNavegado = flag.Bool("sem-navegador", false, "nao abrir o navegador automaticamente")
+		encerrar    = flag.Bool("encerrar", false, "encerra o launcher que ja esta rodando e sai")
 	)
 	flag.Parse()
 
@@ -55,6 +56,19 @@ func main() {
 		cfg.RaizNavegacao = filepath.Dir(raiz)
 	}
 
+	endereco := "127.0.0.1:" + strconv.Itoa(cfg.PortaUI)
+
+	// -encerrar nao sobe nada: so pede para a instancia que esta de pe se encerrar. E a
+	// saida para quando o launcher subiu sem console (janela oculta) e nao tem Ctrl+C.
+	if *encerrar {
+		if err := pedirEncerramento(endereco); err != nil {
+			fmt.Printf("  %v\n", err)
+			os.Exit(1)
+		}
+		fmt.Printf("  launcher em %s encerrado.\n", endereco)
+		return
+	}
+
 	exe := NovoExecutorSO(raiz, cfg.RedeDocker)
 	g := NovoGerente(raiz, cfgPath, cfg, exe)
 	exe.aoLogar = g.RegistrarLog
@@ -71,15 +85,22 @@ func main() {
 
 	go g.Vigiar(ctx, 4*time.Second)
 
-	endereco := "127.0.0.1:" + strconv.Itoa(cfg.PortaUI)
 	servidor := &http.Server{
 		Addr:              endereco,
-		Handler:           somenteLocal(rotas(g, raiz)),
+		Handler:           somenteLocal(rotas(g, raiz, cancelar)),
 		ReadHeaderTimeout: 10 * time.Second,
 	}
 
 	ouvinte, err := net.Listen("tcp", endereco)
 	if err != nil {
+		// Porta ocupada quase sempre significa "ja tem um launcher aberto". Dizer isso, e
+		// como encerrar, vale mais do que despejar o erro de bind.
+		if instanciaDePe(endereco) {
+			fmt.Printf("\n  Ja existe um dev-launcher em http://%s\n", endereco)
+			fmt.Println("  Abra o endereco no navegador, ou encerre com:")
+			fmt.Printf("    dev-launcher.exe -encerrar\n\n")
+			os.Exit(1)
+		}
 		log.Fatalf("nao consegui abrir %s: %v", endereco, err)
 	}
 
@@ -90,7 +111,9 @@ func main() {
 	fmt.Println("  config:  ", cfgPath)
 	fmt.Println("  interface:", url)
 	fmt.Println()
-	fmt.Println("  Ctrl+C encerra o launcher. Servicos em modo gerenciado morrem junto.")
+	fmt.Println("  Para encerrar: Ctrl+C aqui, o botao 'encerrar' na tela, ou")
+	fmt.Println("  'dev-launcher.exe -encerrar' em outro terminal.")
+	fmt.Println("  Os projetos em modo gerenciado sao derrubados junto (containers ficam).")
 	fmt.Println()
 
 	if !*semNavegado {
@@ -99,8 +122,14 @@ func main() {
 
 	go func() {
 		<-ctx.Done()
-		ctxParada, cancelarParada := context.WithTimeout(context.Background(), 5*time.Second)
+		fmt.Println("\n  encerrando...")
+		// Sem isto os dev servers ficam orfaos segurando porta, e o proximo launcher nao
+		// tem mais o PID deles.
+		ctxParada, cancelarParada := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancelarParada()
+		if derrubados := exe.PararGerenciados(ctxParada); len(derrubados) > 0 {
+			fmt.Printf("  derrubados: %s\n", strings.Join(derrubados, ", "))
+		}
 		_ = servidor.Shutdown(ctxParada)
 	}()
 
@@ -146,7 +175,32 @@ func somenteLocal(prox http.Handler) http.Handler {
 	})
 }
 
-func rotas(g *Gerente, raiz string) http.Handler {
+// instanciaDePe confere se quem esta na porta e um dev-launcher, e nao outro programa
+// qualquer - a mensagem de erro muda bastante nos dois casos.
+func instanciaDePe(endereco string) bool {
+	cliente := &http.Client{Timeout: 2 * time.Second}
+	resp, err := cliente.Get("http://" + endereco + "/api/estado")
+	if err != nil {
+		return false
+	}
+	defer resp.Body.Close()
+	return resp.StatusCode == http.StatusOK
+}
+
+func pedirEncerramento(endereco string) error {
+	cliente := &http.Client{Timeout: 5 * time.Second}
+	resp, err := cliente.Post("http://"+endereco+"/api/encerrar", "application/json", nil)
+	if err != nil {
+		return fmt.Errorf("nenhum launcher respondendo em http://%s", endereco)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("o launcher em http://%s respondeu %d", endereco, resp.StatusCode)
+	}
+	return nil
+}
+
+func rotas(g *Gerente, raiz string, encerrar func()) http.Handler {
 	mux := http.NewServeMux()
 
 	arquivos, err := fs.Sub(conteudoWeb, "web")
@@ -414,6 +468,18 @@ func rotas(g *Gerente, raiz string) http.Handler {
 	mux.HandleFunc("GET /api/logs", func(w http.ResponseWriter, r *http.Request) {
 		id := r.URL.Query().Get("id")
 		responderJSON(w, http.StatusOK, map[string]any{"id": id, "linhas": g.Logs(id)})
+	})
+
+	mux.HandleFunc("POST /api/encerrar", func(w http.ResponseWriter, r *http.Request) {
+		// Responde antes de encerrar para a tela conseguir mostrar o aviso.
+		responderJSON(w, http.StatusOK, map[string]any{"encerrando": true})
+		if f, ok := w.(http.Flusher); ok {
+			f.Flush()
+		}
+		go func() {
+			time.Sleep(200 * time.Millisecond)
+			encerrar()
+		}()
 	})
 
 	mux.HandleFunc("GET /api/eventos", func(w http.ResponseWriter, r *http.Request) {
