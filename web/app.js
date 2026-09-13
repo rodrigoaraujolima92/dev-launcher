@@ -43,6 +43,8 @@ createApp({
       salvandoEm: null,
       encerrado: false,
       docker: { rodando: false, iniciando: false, containers: [], mensagem: "verificando..." },
+      git: {},
+      buscandoGit: false,
     };
   },
 
@@ -104,6 +106,7 @@ createApp({
     // O docker vem depois do primeiro desenho: com o engine parado a checagem demora
     // alguns segundos, e nao da para segurar a tela por causa disso.
     this.atualizarDocker();
+    this.atualizarGit(false);
     this.conectarEventos();
     document.addEventListener("keydown", (ev) => {
       if (ev.key === "Escape" && this.modais.length) this.fecharTopo();
@@ -197,6 +200,57 @@ createApp({
       } catch (err) {
         this.avisar(err.message, "erro");
       }
+    },
+
+    // ------------------------------------------------------------------
+    // git
+    // ------------------------------------------------------------------
+    async atualizarGit(forcar) {
+      try {
+        this.git = await this.pedir(`/api/git${forcar ? "?forcar=1" : ""}`);
+      } catch (err) {
+        this.avisar("git: " + err.message, "erro");
+      }
+    },
+
+    // buscarGit sem ids busca em todos os projetos.
+    async buscarGit(ids) {
+      this.buscandoGit = true;
+      try {
+        await this.enviar("/api/git/buscar", { ids: ids || [] });
+        this.avisar(ids ? `buscando ${this.nomeDe(ids[0])}...` : "buscando todos os repositorios...");
+      } catch (err) {
+        this.avisar(err.message, "erro");
+      } finally {
+        // O fetch termina em segundo plano; o evento "git" atualiza a tela quando chegar.
+        setTimeout(() => (this.buscandoGit = false), 1500);
+      }
+      this.menuAberto = null;
+    },
+
+    mexidos(g) {
+      return (g.preparados || 0) + (g.modificados || 0) + (g.nao_rastreados || 0);
+    },
+
+    limpoEEmDia(g) {
+      return !this.mexidos(g) && !g.conflitos && !g.frente && !g.atras && g.upstream;
+    },
+
+    tituloGit(g) {
+      const partes = [`branch ${g.branch || "?"}`];
+      if (g.upstream) partes.push(`upstream ${g.upstream}`);
+      else partes.push("sem upstream configurado");
+      if (g.atras) partes.push(`${g.atras} commit(s) atras do remoto`);
+      if (g.frente) partes.push(`${g.frente} commit(s) a frente`);
+      if (g.preparados) partes.push(`${g.preparados} no indice`);
+      if (g.modificados) partes.push(`${g.modificados} modificado(s)`);
+      if (g.nao_rastreados) partes.push(`${g.nao_rastreados} nao rastreado(s)`);
+      if (g.conflitos) partes.push(`${g.conflitos} em conflito`);
+      if (g.commit && g.commit.hash) {
+        partes.push(`ultimo: ${g.commit.hash} ${g.commit.resumo} (${g.commit.autor}, ${g.commit.quando})`);
+      }
+      if (g.erro) partes.push("erro: " + g.erro);
+      return partes.join("\n");
     },
 
     // ------------------------------------------------------------------
@@ -689,6 +743,9 @@ createApp({
           this.config = evento.config;
         } else if (evento.tipo === "docker") {
           this.docker = evento.docker;
+        } else if (evento.tipo === "git") {
+          this.git = evento.git;
+          this.buscandoGit = false;
         } else if (evento.tipo === "aviso") {
           this.avisar(evento.texto, evento.erro ? "erro" : "");
         } else if (evento.tipo === "fim") {

@@ -67,6 +67,8 @@ type Gerente struct {
 	cfg          *Config
 	exec         Executor
 	docker       SondaDocker
+	git          *CacheGit
+	ultimoGit    string // ultimo retrato do git publicado, para nao repetir evento igual
 	estados      map[string]*Estado
 	logs         map[string]*anel
 	inscritos    map[int]chan []byte
@@ -76,13 +78,14 @@ type Gerente struct {
 	ultimoDocker string // ultimo estado do docker publicado, para nao repetir evento igual
 }
 
-func NovoGerente(raiz, caminhoCfg string, cfg *Config, exe Executor, docker SondaDocker) *Gerente {
+func NovoGerente(raiz, caminhoCfg string, cfg *Config, exe Executor, docker SondaDocker, git *CacheGit) *Gerente {
 	g := &Gerente{
 		raiz:       raiz,
 		caminhoCfg: caminhoCfg,
 		cfg:        cfg,
 		exec:       exe,
 		docker:     docker,
+		git:        git,
 		estados:    map[string]*Estado{},
 		logs:       map[string]*anel{},
 		inscritos:  map[int]chan []byte{},
@@ -515,9 +518,14 @@ func (g *Gerente) Vigiar(ctx context.Context, intervalo time.Duration) {
 	// engine nao vai e volta a cada quatro segundos.
 	tickDocker := time.NewTicker(2 * intervalo)
 	defer tickDocker.Stop()
+	// Git muda quando alguem edita ou faz commit, nao de segundo em segundo. Sao tres
+	// comandos por repositorio, entao vale um ritmo bem mais lento.
+	tickGit := time.NewTicker(8 * intervalo)
+	defer tickGit.Stop()
 
 	g.varrer(ctx)
 	go g.PublicarDocker(ctx)
+	go g.PublicarGit(ctx, false)
 	for {
 		select {
 		case <-ctx.Done():
@@ -526,6 +534,8 @@ func (g *Gerente) Vigiar(ctx context.Context, intervalo time.Duration) {
 			g.varrer(ctx)
 		case <-tickDocker.C:
 			g.PublicarDocker(ctx)
+		case <-tickGit.C:
+			g.PublicarGit(ctx, false)
 		}
 	}
 }
@@ -609,6 +619,115 @@ func (g *Gerente) LogsContainer(ctx context.Context, nome string, linhas int) (s
 		return "", errors.New("sonda do docker indisponivel")
 	}
 	return g.docker.Logs(ctx, nome, linhas)
+}
+
+// ------------------------------------------------------------------
+// git
+// ------------------------------------------------------------------
+
+// pastasDosProjetos mapeia projeto -> pasta. So os do tipo app: sao eles que tem codigo
+// versionado; servico docker aponta para um arquivo compose, nao para um repositorio.
+func (g *Gerente) pastasDosProjetos() map[string]string {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	out := map[string]string{}
+	for _, s := range g.cfg.Servicos {
+		if s.Tipo == TipoApp && s.Dir != "" {
+			out[s.ID] = caminhoAbsoluto(g.raiz, s.Dir)
+		}
+	}
+	return out
+}
+
+// EstadosGit devolve o retrato do git por projeto. Projetos que compartilham a mesma pasta
+// compartilham uma consulta so.
+func (g *Gerente) EstadosGit(ctx context.Context, forcar bool) map[string]EstadoGit {
+	if g.git == nil {
+		return map[string]EstadoGit{}
+	}
+	pastas := g.pastasDosProjetos()
+	distintas := []string{}
+	vistas := map[string]bool{}
+	for _, dir := range pastas {
+		if !vistas[dir] {
+			vistas[dir] = true
+			distintas = append(distintas, dir)
+		}
+	}
+
+	porPasta := g.git.Estados(ctx, distintas, forcar)
+	out := map[string]EstadoGit{}
+	for id, dir := range pastas {
+		if estado, ok := porPasta[dir]; ok {
+			out[id] = estado
+		}
+	}
+	return out
+}
+
+// PublicarGit manda o retrato para a tela, so quando ele muda.
+func (g *Gerente) PublicarGit(ctx context.Context, forcar bool) map[string]EstadoGit {
+	estados := g.EstadosGit(ctx, forcar)
+	dados, err := json.Marshal(estados)
+	if err != nil {
+		return estados
+	}
+	g.mu.Lock()
+	mudou := string(dados) != g.ultimoGit
+	if mudou {
+		g.ultimoGit = string(dados)
+	}
+	g.mu.Unlock()
+	if mudou {
+		g.emitir(map[string]any{"tipo": "git", "git": estados})
+	}
+	return estados
+}
+
+// BuscarGit roda "git fetch" nos projetos pedidos (todos, se a lista vier vazia). Sem isso
+// o "atras" so reflete o que o repositorio local ja sabia do remoto.
+func (g *Gerente) BuscarGit(ctx context.Context, ids []string) []error {
+	if g.git == nil {
+		return []error{errors.New("git indisponivel")}
+	}
+	pastas := g.pastasDosProjetos()
+	alvos := map[string]string{} // pasta -> nome do projeto (para a mensagem de erro)
+	for id, dir := range pastas {
+		if len(ids) > 0 && !contemString(ids, id) {
+			continue
+		}
+		if _, ja := alvos[dir]; !ja {
+			alvos[dir] = id
+		}
+	}
+
+	var mu sync.Mutex
+	var erros []error
+	var wg sync.WaitGroup
+	for dir, id := range alvos {
+		wg.Add(1)
+		go func(dir, id string) {
+			defer wg.Done()
+			if err := g.git.Buscar(ctx, dir); err != nil {
+				mu.Lock()
+				erros = append(erros, fmt.Errorf("%s: %w", id, err))
+				mu.Unlock()
+			}
+		}(dir, id)
+	}
+	wg.Wait()
+
+	g.PublicarGit(ctx, true)
+	return erros
+}
+
+func contemString(lista []string, alvo string) bool {
+	for _, v := range lista {
+		if v == alvo {
+			return true
+		}
+	}
+	return false
 }
 
 // AbrirDocker sobe o Docker Desktop a pedido da tela, com o andamento indo para os avisos.

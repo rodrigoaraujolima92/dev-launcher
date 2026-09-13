@@ -60,6 +60,10 @@
       </div>
     </div>
     <div class="acoes-barra">
+      <button class="mini" type="button" :disabled="buscandoGit" @click="buscarGit()"
+              title="git fetch --prune em todos os projetos">
+        {{ buscandoGit ? 'buscando...' : 'git fetch' }}
+      </button>
       <button class="mini" type="button" @click="salvarPerfilAtual">salvar selecao como perfil</button>
       <button class="mini" type="button" @click="novoGrupo">novo grupo</button>
       <button class="mini destaque" type="button" @click="formularioServico(null)">+ novo projeto</button>
@@ -120,6 +124,18 @@
                  : s.dir + ' · ' + s.cmd }}
             </p>
 
+            <div class="git" v-if="git[s.id] && git[s.id].repo" :title="tituloGit(git[s.id])">
+              <span class="ramo">⎇ {{ git[s.id].branch || 'detached' }}</span>
+              <span v-if="git[s.id].atras" class="atras" title="commits do remoto que faltam aqui">↓{{ git[s.id].atras }}</span>
+              <span v-if="git[s.id].frente" class="frente" title="commits locais que o remoto nao tem">↑{{ git[s.id].frente }}</span>
+              <span v-if="!git[s.id].upstream" class="sem-upstream">sem upstream</span>
+              <span v-if="git[s.id].conflitos" class="conflito">{{ git[s.id].conflitos }} conflito(s)</span>
+              <span v-if="mexidos(git[s.id])" class="mexido">{{ mexidos(git[s.id]) }} mexido(s)</span>
+              <span v-if="git[s.id].adicoes" class="mais">+{{ git[s.id].adicoes }}</span>
+              <span v-if="git[s.id].remocoes" class="menos">-{{ git[s.id].remocoes }}</span>
+              <span v-if="limpoEEmDia(git[s.id])" class="em-dia">em dia</span>
+            </div>
+
             <div class="dependencias">
               <span class="rotulo-dep">espera</span>
               <div class="chips">
@@ -159,6 +175,9 @@
                   <button type="button" @click="abrirNoSistema(s, 'pasta')">abrir pasta</button>
                   <button type="button" @click="abrirNoSistema(s, 'editor')">abrir no VS Code</button>
                   <button type="button" @click="copiarComando(s)">copiar comando</button>
+                  <button v-if="git[s.id] && git[s.id].repo" type="button" @click="buscarGit([s.id])">
+                    git fetch deste projeto
+                  </button>
                 </div>
               </details>
             </div>

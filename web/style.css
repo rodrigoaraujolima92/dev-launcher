@@ -305,6 +305,37 @@ main {
   text-overflow: ellipsis;
 }
 
+/* ---------------- linha do git ---------------- */
+
+.git {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin-top: 6px;
+  font-size: 10.5px;
+  flex-wrap: wrap;
+}
+.git .ramo {
+  padding: 0 6px;
+  color: var(--texto);
+  background: rgba(125, 173, 160, 0.1);
+  border: 1px solid var(--linha-forte);
+  border-radius: 2px;
+}
+.git .atras { color: var(--vermelho); }
+.git .frente { color: var(--azul); }
+.git .mexido { color: var(--ambar); }
+.git .conflito { color: var(--vermelho); font-weight: 600; }
+.git .mais { color: var(--verde); }
+.git .menos { color: var(--vermelho); }
+.git .em-dia { color: var(--fraco); }
+.git .sem-upstream {
+  padding: 0 5px;
+  color: var(--roxo);
+  border: 1px dashed rgba(183, 155, 255, 0.35);
+  border-radius: 2px;
+}
+
 .dependencias { display: flex; align-items: center; gap: 7px; margin-top: 7px; flex-wrap: wrap; }
 .rotulo-dep { font-size: 10px; text-transform: uppercase; letter-spacing: 0.14em; color: var(--fraco); }
 .chips { display: flex; gap: 5px; flex-wrap: wrap; }

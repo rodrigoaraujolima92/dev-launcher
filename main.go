@@ -71,7 +71,7 @@ func main() {
 
 	sonda := NovaSondaDockerSO()
 	exe := NovoExecutorSO(raiz, cfg.RedeDocker, sonda)
-	g := NovoGerente(raiz, cfgPath, cfg, exe, sonda)
+	g := NovoGerente(raiz, cfgPath, cfg, exe, sonda, NovoCacheGit(SondaGitSO{}))
 	exe.aoLogar = g.RegistrarLog
 	exe.aoTerPID = func(id string, pid int) { g.definirPID(id, pid) }
 	exe.aoEncerra = func(id, mensagem string) {
@@ -262,6 +262,32 @@ func rotas(g *Gerente, raiz string, encerrar func()) http.Handler {
 			return
 		}
 		responderJSON(w, http.StatusOK, map[string]any{"config": g.Config()})
+	})
+
+	mux.HandleFunc("GET /api/git", func(w http.ResponseWriter, r *http.Request) {
+		responderJSON(w, http.StatusOK, g.EstadosGit(r.Context(), r.URL.Query().Get("forcar") == "1"))
+	})
+
+	mux.HandleFunc("POST /api/git/buscar", func(w http.ResponseWriter, r *http.Request) {
+		var corpo struct {
+			IDs []string `json:"ids"`
+		}
+		// Corpo vazio quer dizer "todos os projetos".
+		_ = json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<20)).Decode(&corpo)
+
+		// git fetch e rede: pode demorar. Responde na hora e avisa pelo SSE quando termina.
+		go func() {
+			ctx, cancelar := context.WithTimeout(context.Background(), 5*time.Minute)
+			defer cancelar()
+			erros := g.BuscarGit(ctx, corpo.IDs)
+			for _, e := range erros {
+				g.emitir(map[string]any{"tipo": "aviso", "texto": e.Error(), "erro": true})
+			}
+			if len(erros) == 0 {
+				g.emitir(map[string]any{"tipo": "aviso", "texto": "git fetch concluido."})
+			}
+		}()
+		responderJSON(w, http.StatusOK, map[string]any{"buscando": true})
 	})
 
 	mux.HandleFunc("GET /api/docker", func(w http.ResponseWriter, r *http.Request) {

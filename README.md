@@ -42,6 +42,36 @@ despejar o erro de bind.
 - **Nao reinicia o que ja esta no ar.** Containers sobem com `--no-recreate`; app que ja
   esta atendendo na porta e marcada como "ja estava no ar".
 
+## Git
+
+Cada projeto do tipo `app` mostra no cartao uma linha com o estado do repositorio:
+
+```
+⎇ main ↓1                          1 commit atras do origin/main
+⎇ feat/polaroid sem upstream 20 mexido(s) +1486 -111
+⎇ main em dia
+```
+
+- **⎇ branch** - o branch atual (ou `detached`);
+- **↓N / ↑N** - commits que faltam aqui / commits locais que o remoto nao tem;
+- **sem upstream** - branch local que nunca foi publicado;
+- **N mexido(s)** - soma de indice, copia de trabalho e nao rastreados;
+- **+N -N** - linhas do `git diff --shortstat HEAD`;
+- **em dia** - limpo e sincronizado.
+
+O tooltip abre o detalhe: upstream, contagem por categoria e o ultimo commit (hash, resumo,
+autor e quando).
+
+**`git fetch`** na barra de perfis roda `git fetch --prune` em todos os repositorios (ou em
+um so, pelo menu `⋯` do cartao). Sem fetch, o `↓` so reflete o que o repositorio local ja
+sabia do remoto - por isso o botao existe em vez de um fetch automatico, que mexeria na
+rede sem pedir.
+
+Sao tres comandos por repositorio (`status --porcelain=v2`, `diff --shortstat` e `log -1`),
+entao o resultado fica em cache por 20s e as pastas sao consultadas em paralelo; projetos
+que apontam para a mesma pasta compartilham uma consulta. A varredura automatica anda num
+ritmo bem mais lento que a de status dos servicos.
+
 ## Docker
 
 O painel **docker** na lateral mostra o estado do engine, a versao e a lista de containers:
@@ -189,6 +219,8 @@ Config da primeira versao (sem `grupos`/`perfis`) e migrado sozinho ao abrir.
 | POST/DELETE | `/api/servicos` · `/api/servicos/{id}` | cadastro completo |
 | POST | `/api/servicos/{id}/mover` | `{"grupo": "...", "antes": "id ou vazio"}` (arrastar e soltar) |
 | POST | `/api/abrir` | `{"id": "...", "alvo": "pasta\|editor"}` |
+| GET | `/api/git` | estado do repositorio por projeto (`?forcar=1` ignora o cache) |
+| POST | `/api/git/buscar` | `{"ids": [...]}` (vazio = todos) - `git fetch --prune` |
 | GET | `/api/docker` | estado do engine + containers (do config e os de fora rodando) |
 | POST | `/api/docker/abrir` | abre o Docker Desktop e espera o engine (responde na hora) |
 | POST | `/api/docker/containers/{nome}/{start\|stop\|restart}` | acao no container |
