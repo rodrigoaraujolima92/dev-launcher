@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
 	"path/filepath"
 	"sync"
 	"time"
@@ -236,7 +237,7 @@ func (g *Gerente) mutar(fn func(cfg *Config) error) error {
 			return fmt.Errorf("nao consegui salvar o config: %w", err)
 		}
 	}
-	g.emitir(map[string]any{"tipo": "config", "config": cfg})
+	g.emitir(map[string]any{"tipo": "config", "config": cfg, "faltando": g.CaminhosFaltando()})
 	return nil
 }
 
@@ -619,6 +620,33 @@ func (g *Gerente) LogsContainer(ctx context.Context, nome string, linhas int) (s
 		return "", errors.New("sonda do docker indisponivel")
 	}
 	return g.docker.Logs(ctx, nome, linhas)
+}
+
+// CaminhosFaltando lista os projetos cuja pasta (ou arquivo compose) nao existe nesta
+// maquina. E o sintoma classico de config vindo de outro ambiente, ou de raiz apontando
+// para o lugar errado - melhor dizer isso na cara do que falhar so na hora de subir.
+func (g *Gerente) CaminhosFaltando() []string {
+	g.mu.Lock()
+	servicos := append([]*Servico{}, g.cfg.Servicos...)
+	raiz := g.raiz
+	g.mu.Unlock()
+
+	faltando := []string{}
+	for _, s := range servicos {
+		var alvo string
+		switch {
+		case s.Tipo == TipoApp && s.Dir != "":
+			alvo = caminhoAbsoluto(raiz, s.Dir)
+		case s.Tipo == TipoDocker && s.Compose != nil && s.Compose.Arquivo != "":
+			alvo = caminhoAbsoluto(raiz, s.Compose.Arquivo)
+		default:
+			continue
+		}
+		if _, err := os.Stat(alvo); err != nil {
+			faltando = append(faltando, s.ID)
+		}
+	}
+	return faltando
 }
 
 // ------------------------------------------------------------------

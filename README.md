@@ -4,12 +4,55 @@ Interface web para subir o ambiente local: marca quais projetos sobem, define qu
 quem, agrupa por empresa/produto, salva perfis de execucao e acompanha o log de cada um.
 
 ```powershell
-../start-ui.ps1          # compila se precisar, sobe e abre o navegador
-../start-ui.ps1 -Porta 7011
-../start-ui.ps1 -Encerrar # encerra o launcher que estiver rodando
+./start-ui.ps1            # compila se precisar, sobe e abre o navegador
+./start-ui.ps1 -Porta 7011
+./start-ui.ps1 -Encerrar  # encerra o launcher que estiver rodando
+./start-ui.ps1 -Raiz D:\projetos
 ```
 
-Sem interface, so as abas do Windows Terminal: `../start-dev.ps1`.
+Sem interface, so as abas do Windows Terminal: `./start-dev.ps1` (caminho antigo, especifico
+do appdaturma; quem manda hoje e o launcher).
+
+## Compilar
+
+```powershell
+go build -o dev-launcher.exe .   # binario unico, ~10 MB
+go run .                         # compila e roda, sem gerar o .exe
+```
+
+Nao ha npm nem passo de frontend: `web/` (Vue incluso) entra no binario via `go:embed`.
+O `start-ui.ps1` chama o `go build` sozinho quando algum `.go`, `.html`, `.css` ou `.js`
+esta mais novo que o executavel.
+
+Antes de commitar:
+
+```powershell
+gofmt -l . ; go vet ./... ; go test ./...
+```
+
+## Onde ficam os projetos (raiz)
+
+Todo caminho relativo do `config.json` e resolvido contra uma **pasta base**, decidida nesta
+ordem:
+
+| Origem | Exemplo |
+| --- | --- |
+| flag `-raiz` | `dev-launcher.exe -raiz D:\projetos` |
+| variavel `DEV_LAUNCHER_RAIZ` | `$env:DEV_LAUNCHER_RAIZ = 'D:\projetos'` |
+| `raiz_projetos` no config | `"raiz_projetos": ".."` |
+| padrao | a pasta acima do `config.json` |
+
+Valor relativo e resolvido contra a **pasta do config**, nunca contra o diretorio de
+trabalho - o launcher e chamado por atalho, de qualquer lugar.
+
+E por isso que o config daqui usa `"raiz_projetos": ".."`: com o launcher morando dentro da
+pasta que guarda os projetos, o mesmo arquivo funciona em qualquer maquina, sem
+`C:\Users\fulano` no meio. Na mesma linha, caminho de projeto **dentro** da raiz e gravado
+relativo (`appdaturma/appdaturma-backend`); so o que esta fora fica absoluto.
+
+Quando um caminho nao existe na maquina - config de outra pessoa, raiz errada, projeto ainda
+nao clonado - o launcher avisa no terminal ao subir e marca o cartao com **pasta nao
+encontrada**, em vez de falhar so na hora de rodar.
 
 ## Encerrar
 
@@ -18,7 +61,7 @@ Ctrl+C:
 
 1. **Ctrl+C** no terminal onde ele esta rodando;
 2. o botao **encerrar** no canto da tela;
-3. **`dev-launcher.exe -encerrar`** (ou `../start-ui.ps1 -Encerrar`) em outro terminal.
+3. **`dev-launcher.exe -encerrar`** (ou `./start-ui.ps1 -Encerrar`) em outro terminal.
 
 Encerrar derruba os projetos em **modo gerenciado** - eles sao filhos do launcher, e deixar
 orfao significaria porta ocupada por um processo que ninguem mais rastreia. Containers
@@ -155,7 +198,8 @@ Tudo que a tela edita vai para este arquivo. Campo a campo:
 {
   "porta_ui": 7010,
   "rede_docker": "PRODUCTION",          // criada se nao existir (os compose usam como external)
-  "raiz_navegacao": "C:\\Users\\Pichau\\projetos",  // onde o seletor de pastas comeca
+  "raiz_projetos": "..",                // pasta base; relativa ao proprio config.json
+  "raiz_navegacao": "..",               // seletor de pastas; vazio = a raiz
   "grupos": [{ "id": "infra", "nome": "infraestrutura" }],
   "perfis": [{ "id": "so-apis", "nome": "so as APIs", "servicos": ["db", "permissions"] }],
   "perfil_ativo": "so-apis",
@@ -169,7 +213,7 @@ Tudo que a tela edita vai para este arquivo. Campo a campo:
   "nome": "appdaturma-backend",
   "grupo": "api",                  // id de um grupo
   "tipo": "app",                   // app | docker
-  "dir": "appdaturma-backend",     // relativo a esta pasta/.., ou absoluto
+  "dir": "appdaturma/appdaturma-backend",  // relativo a raiz, ou absoluto
   "cmd": "& './run-local.ps1'",    // roda no pwsh, dentro de "dir"
   "porta": 7003,
   "url": "http://localhost:7003",  // vira o link "abrir"
@@ -186,7 +230,7 @@ Servico `docker` troca `dir`/`cmd` por:
 ```jsonc
 "compose": {
   "projeto": "dockerappdaturma",              // mantem o nome de projeto ja usado na maquina
-  "arquivo": "docker appdaturma/docker-compose.yml",
+  "arquivo": "appdaturma/docker appdaturma/docker-compose.yml",
   "servico": "db"
 },
 "container": "db"

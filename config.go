@@ -65,9 +65,14 @@ type Perfil struct {
 }
 
 type Config struct {
-	PortaUI       int        `json:"porta_ui"`
-	RedeDocker    string     `json:"rede_docker"`
-	RaizNavegacao string     `json:"raiz_navegacao,omitempty"` // onde o seletor de pastas comeca
+	PortaUI    int    `json:"porta_ui"`
+	RedeDocker string `json:"rede_docker"`
+	// RaizProjetos e a pasta base contra a qual os caminhos relativos do config sao
+	// resolvidos. Pode ser absoluta ou relativa AO PROPRIO config.json - ".." e o caso
+	// comum, com o launcher morando dentro da pasta que guarda os projetos. Guardar
+	// relativo e o que faz o mesmo config abrir na maquina de outra pessoa.
+	RaizProjetos  string     `json:"raiz_projetos,omitempty"`
+	RaizNavegacao string     `json:"raiz_navegacao,omitempty"` // seletor de pastas; vazio = a raiz
 	Grupos        []*Grupo   `json:"grupos"`
 	Perfis        []*Perfil  `json:"perfis"`
 	PerfilAtivo   string     `json:"perfil_ativo,omitempty"`
@@ -568,6 +573,14 @@ func salvarServico(cfg *Config, entrada EntradaServico, raizProjeto, raizNavegac
 		return "", err
 	}
 
+	// Guarda relativo sempre que der: o seletor de pastas devolve caminho absoluto, e um
+	// config cheio de "C:\Users\fulano\..." nao abre na maquina de mais ninguem.
+	if s.Tipo == TipoApp {
+		s.Dir = tornarRelativo(raizProjeto, s.Dir)
+	} else if s.Compose != nil {
+		s.Compose.Arquivo = tornarRelativo(raizProjeto, s.Compose.Arquivo)
+	}
+
 	if entrada.ID == "" {
 		usados := map[string]bool{}
 		for _, existente := range novo.Servicos {
@@ -951,6 +964,73 @@ func caminhoAbsoluto(raiz, rel string) string {
 		return filepath.Clean(rel)
 	}
 	return filepath.Clean(filepath.Join(raiz, filepath.FromSlash(rel)))
+}
+
+// OrigemRaiz conta de onde veio a pasta base - aparece no log de inicializacao, para nao
+// virar adivinhacao quando alguem abre o launcher numa maquina diferente.
+type OrigemRaiz string
+
+const (
+	RaizDeFlag     OrigemRaiz = "-raiz"
+	RaizDeAmbiente OrigemRaiz = "DEV_LAUNCHER_RAIZ"
+	RaizDeConfig   OrigemRaiz = "config.json"
+	RaizPadrao     OrigemRaiz = "padrao (pasta acima do config)"
+)
+
+// resolverRaiz decide a pasta base dos projetos, em ordem de precedencia:
+//
+//	-raiz  >  DEV_LAUNCHER_RAIZ  >  raiz_projetos do config  >  pasta acima do config.json
+//
+// Valor relativo e resolvido contra a PASTA DO CONFIG, nao contra o diretorio de trabalho:
+// o launcher pode ser chamado por atalho, de qualquer lugar, e o resultado tem que ser o
+// mesmo.
+func resolverRaiz(daFlag, doAmbiente, doConfig, caminhoCfg string) (string, OrigemRaiz) {
+	pastaCfg := filepath.Dir(caminhoCfg)
+	escolher := func(valor string, origem OrigemRaiz) (string, OrigemRaiz, bool) {
+		valor = strings.TrimSpace(valor)
+		if valor == "" {
+			return "", "", false
+		}
+		if !filepath.IsAbs(valor) {
+			valor = filepath.Join(pastaCfg, filepath.FromSlash(valor))
+		}
+		return filepath.Clean(valor), origem, true
+	}
+
+	for _, tentativa := range []struct {
+		valor  string
+		origem OrigemRaiz
+	}{
+		{daFlag, RaizDeFlag},
+		{doAmbiente, RaizDeAmbiente},
+		{doConfig, RaizDeConfig},
+	} {
+		if raiz, origem, ok := escolher(tentativa.valor, tentativa.origem); ok {
+			return raiz, origem
+		}
+	}
+	return filepath.Clean(filepath.Dir(pastaCfg)), RaizPadrao
+}
+
+// tornarRelativo devolve o caminho relativo a raiz quando ele esta dentro dela, com barras
+// normais. E isso que mantem o config portavel: pasta de projeto vira "appdaturma/backend"
+// em vez de "C:\Users\fulano\projetos\appdaturma\backend".
+func tornarRelativo(raiz, caminho string) string {
+	if raiz == "" || caminho == "" {
+		return caminho
+	}
+	abs := caminho
+	if !filepath.IsAbs(abs) {
+		return filepath.ToSlash(abs) // ja e relativo: so normaliza as barras
+	}
+	if !dentroDe(raiz, abs) {
+		return abs // fora da raiz continua absoluto, senao viraria um "../.." ilegivel
+	}
+	rel, err := filepath.Rel(filepath.Clean(raiz), filepath.Clean(abs))
+	if err != nil {
+		return abs
+	}
+	return filepath.ToSlash(rel)
 }
 
 // dentroDe diz se caminho esta sob raiz. Compara caso-insensitivo porque no Windows

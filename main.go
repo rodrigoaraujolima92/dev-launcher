@@ -30,6 +30,7 @@ func main() {
 		porta       = flag.Int("porta", 0, "porta da interface web (sobrepoe a do config)")
 		semNavegado = flag.Bool("sem-navegador", false, "nao abrir o navegador automaticamente")
 		encerrar    = flag.Bool("encerrar", false, "encerra o launcher que ja esta rodando e sai")
+		raizFlag    = flag.String("raiz", "", "pasta base dos projetos (sobrepoe DEV_LAUNCHER_RAIZ e raiz_projetos)")
 	)
 	flag.Parse()
 
@@ -41,8 +42,13 @@ func main() {
 	if err != nil {
 		log.Fatalf("config: %v", err)
 	}
-	// A raiz dos projetos e a pasta acima do config (dev-launcher/config.json -> appdaturma).
-	raiz := filepath.Dir(filepath.Dir(cfgPath))
+
+	// A pasta base e explicita, e nao mais "a pasta acima do config": e o que permite mover
+	// o launcher de lugar, e o mesmo config abrir na maquina de outra pessoa.
+	raiz, origemRaiz := resolverRaiz(*raizFlag, os.Getenv("DEV_LAUNCHER_RAIZ"), cfg.RaizProjetos, cfgPath)
+	if info, err := os.Stat(raiz); err != nil || !info.IsDir() {
+		log.Fatalf("a pasta base nao existe: %s (veio de %s)", raiz, origemRaiz)
+	}
 
 	if *porta > 0 {
 		cfg.PortaUI = *porta
@@ -50,10 +56,11 @@ func main() {
 	if cfg.PortaUI == 0 {
 		cfg.PortaUI = 7010
 	}
+	// Navegacao vazia comeca na propria raiz; relativa, resolve contra a pasta do config.
 	if cfg.RaizNavegacao == "" {
-		// O seletor de pastas comeca na pasta que guarda os projetos (o pai da raiz):
-		// C:\Users\Pichau\projetos, nao so o appdaturma.
-		cfg.RaizNavegacao = filepath.Dir(raiz)
+		cfg.RaizNavegacao = raiz
+	} else if !filepath.IsAbs(cfg.RaizNavegacao) {
+		cfg.RaizNavegacao = filepath.Clean(filepath.Join(filepath.Dir(cfgPath), filepath.FromSlash(cfg.RaizNavegacao)))
 	}
 
 	endereco := "127.0.0.1:" + strconv.Itoa(cfg.PortaUI)
@@ -107,10 +114,14 @@ func main() {
 
 	url := "http://" + endereco
 	fmt.Println()
-	fmt.Println("  dev-launcher do appdaturma")
-	fmt.Println("  raiz:    ", raiz)
-	fmt.Println("  config:  ", cfgPath)
+	fmt.Println("  dev-launcher")
+	fmt.Printf("  raiz:      %s   (%s)\n", raiz, origemRaiz)
+	fmt.Println("  config:   ", cfgPath)
 	fmt.Println("  interface:", url)
+	if faltando := g.CaminhosFaltando(); len(faltando) > 0 {
+		fmt.Printf("  AVISO: pasta nao encontrada em: %s\n", strings.Join(faltando, ", "))
+		fmt.Println("         confira a raiz acima ou os caminhos do config.")
+	}
 	fmt.Println()
 	fmt.Println("  Para encerrar: Ctrl+C aqui, o botao 'encerrar' na tela, ou")
 	fmt.Println("  'dev-launcher.exe -encerrar' em outro terminal.")
@@ -216,6 +227,7 @@ func rotas(g *Gerente, raiz string, encerrar func()) http.Handler {
 			"config":   g.Config(),
 			"estados":  g.Estados(),
 			"terminal": comandoExiste("wt"),
+			"faltando": g.CaminhosFaltando(),
 		})
 	})
 

@@ -1,7 +1,7 @@
 {
   "porta_ui": 7010,
   "rede_docker": "PRODUCTION",
-  "raiz_navegacao": "C:\\Users\\Pichau\\projetos",
+  "raiz_projetos": "..",
   "grupos": [
     {
       "id": "infra",
@@ -46,7 +46,7 @@
       "tipo": "docker",
       "compose": {
         "projeto": "dockerappdaturma",
-        "arquivo": "docker appdaturma/docker-compose.yml",
+        "arquivo": "appdaturma/docker appdaturma/docker-compose.yml",
         "servico": "db"
       },
       "container": "db",
@@ -74,7 +74,7 @@
       "tipo": "docker",
       "compose": {
         "projeto": "dockerappdaturma",
-        "arquivo": "docker appdaturma/docker-compose-rabbit.yml",
+        "arquivo": "appdaturma/docker appdaturma/docker-compose-rabbit.yml",
         "servico": "rabbitmq"
       },
       "container": "rabbitmq",
@@ -95,7 +95,7 @@
       "tipo": "docker",
       "compose": {
         "projeto": "projetos",
-        "arquivo": "../mailhog.yml",
+        "arquivo": "mailhog.yml",
         "servico": "mailhog"
       },
       "container": "projetos-mailhog-1",
@@ -116,7 +116,7 @@
       "tipo": "docker",
       "compose": {
         "projeto": "dockerappdaturma",
-        "arquivo": "docker appdaturma/docker-compose.yml",
+        "arquivo": "appdaturma/docker appdaturma/docker-compose.yml",
         "servico": "adminer"
       },
       "container": "dockerappdaturma-adminer-1",
@@ -137,7 +137,7 @@
       "nome": "permissions-api",
       "grupo": "api",
       "tipo": "app",
-      "dir": "permissions-api",
+      "dir": "appdaturma/permissions-api",
       "cmd": "go run ./cmd/api",
       "porta": 7019,
       "pronto": {
@@ -157,7 +157,7 @@
       "nome": "contrato-api",
       "grupo": "api",
       "tipo": "app",
-      "dir": "contrato-api",
+      "dir": "appdaturma/contrato-api",
       "cmd": "if (Get-Command air -ErrorAction SilentlyContinue) { air } else { go run ./cmd/api }",
       "porta": 8083,
       "pronto": {
@@ -176,8 +176,8 @@
       "nome": "appdaturma-backend",
       "grupo": "api",
       "tipo": "app",
-      "dir": "appdaturma-backend",
-      "cmd": "\u0026 './run-local.ps1'",
+      "dir": "appdaturma/appdaturma-backend",
+      "cmd": "& './run-local.ps1'",
       "porta": 7003,
       "url": "http://localhost:7003",
       "pronto": {
@@ -200,7 +200,7 @@
       "nome": "appdaturma-frontend",
       "grupo": "web",
       "tipo": "app",
-      "dir": "appdaturma-frontend",
+      "dir": "appdaturma/appdaturma-frontend",
       "cmd": "npm run serve -- --port 8080",
       "porta": 8080,
       "url": "http://localhost:8080",
@@ -220,7 +220,7 @@
       "nome": "appdaturma-admin",
       "grupo": "web",
       "tipo": "app",
-      "dir": "appdaturma-admin",
+      "dir": "appdaturma/appdaturma-admin",
       "cmd": "npm run serve -- --port 8081",
       "porta": 8081,
       "url": "http://localhost:8081",
@@ -240,7 +240,7 @@
       "nome": "cabine-foto-front",
       "grupo": "photonow",
       "tipo": "app",
-      "dir": "C:\\Users\\Pichau\\projetos\\photonow\\cabine-foto-front",
+      "dir": "photonow/cabine-foto-front",
       "cmd": "npm run serve",
       "porta": 8080,
       "url": "http://localhost:8080",
@@ -251,7 +251,7 @@
       "timeout": 120,
       "modo": "gerenciado",
       "depende": [],
-      "selecionado": false
+      "selecionado": true
     }
   ]
 }

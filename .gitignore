@@ -8,3 +8,6 @@ tmp/
 
 # Sobra de escrita atomica do config (salvarConfig grava .tmp e renomeia)
 config.json.tmp
+
+# Atalho do Windows: guarda caminho absoluto da maquina de quem criou
+*.lnk

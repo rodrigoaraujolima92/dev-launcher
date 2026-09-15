@@ -943,3 +943,11 @@ main {
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: #223230; border-radius: 4px; }
 ::-webkit-scrollbar-thumb:hover { background: #2e423f; }
+
+/* Etiqueta de caminho quebrado: config que veio de outra maquina, ou raiz apontando para o
+   lugar errado. Aparece antes de tentar subir, nao depois de falhar. */
+.etiqueta.sem-pasta {
+  color: var(--vermelho);
+  border-color: rgba(255, 98, 87, 0.45);
+  background: rgba(255, 98, 87, 0.08);
+}

@@ -115,6 +115,10 @@
               <span class="led" :data-status="estado(s.id).status" aria-hidden="true"></span>
               <h3 class="nome">{{ s.nome }}</h3>
               <span class="etiqueta porta">{{ s.porta ? ':' + s.porta : s.tipo }}</span>
+              <span v-if="faltando.includes(s.id)" class="etiqueta sem-pasta"
+                    :title="'nao encontrei &quot;' + (s.tipo === 'docker' ? s.compose.arquivo : s.dir) + '&quot; a partir da raiz ' + raiz">
+                pasta nao encontrada
+              </span>
               <span class="estado-texto" :class="estado(s.id).status">{{ textoEstado(s.id) }}</span>
             </div>
 

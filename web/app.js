@@ -45,6 +45,7 @@ createApp({
       docker: { rodando: false, iniciando: false, containers: [], mensagem: "verificando..." },
       git: {},
       buscandoGit: false,
+      faltando: [],
     };
   },
 
@@ -98,6 +99,7 @@ createApp({
       this.config = dados.config;
       this.raiz = dados.raiz;
       this.temWt = dados.terminal;
+      this.faltando = dados.faltando || [];
       for (const e of dados.estados) this.estados[e.id] = e;
     } catch (err) {
       return this.avisar("nao consegui falar com o launcher: " + err.message, "erro");
@@ -741,6 +743,7 @@ createApp({
           if (evento.id === this.logAtual) this.acrescentarLog(evento.linha);
         } else if (evento.tipo === "config") {
           this.config = evento.config;
+          this.faltando = evento.faltando || [];
         } else if (evento.tipo === "docker") {
           this.docker = evento.docker;
         } else if (evento.tipo === "git") {
