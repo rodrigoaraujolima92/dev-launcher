@@ -521,11 +521,7 @@ func rotas(g *Gerente, raiz string, encerrar func()) http.Handler {
 		}
 		plano, err := g.Subir(context.Background(), ids)
 		if err != nil {
-			codigo := http.StatusBadRequest
-			if errors.Is(err, ErrSubidaEmAndamento) {
-				codigo = http.StatusConflict
-			}
-			responderErro(w, codigo, err)
+			responderErro(w, http.StatusBadRequest, err)
 			return
 		}
 		responderJSON(w, http.StatusOK, plano)
@@ -566,11 +562,7 @@ func rotas(g *Gerente, raiz string, encerrar func()) http.Handler {
 		}
 		plano, err := g.Subir(context.Background(), ids)
 		if err != nil {
-			codigo := http.StatusBadRequest
-			if errors.Is(err, ErrSubidaEmAndamento) {
-				codigo = http.StatusConflict
-			}
-			responderErro(w, codigo, err)
+			responderErro(w, http.StatusBadRequest, err)
 			return
 		}
 		responderJSON(w, http.StatusOK, plano)

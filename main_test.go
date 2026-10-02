@@ -117,15 +117,16 @@ func TestConfigAplicaSelecao(t *testing.T) {
 	}
 }
 
-func TestSubirEmAndamentoResponde409(t *testing.T) {
+func TestSubirComOutraSubidaEmAndamentoEAceito(t *testing.T) {
 	h, _ := servidorTeste(t, map[string]comportamento{"db": {demora: 400 * time.Millisecond}})
 
 	if resp := chamar(t, h, http.MethodPost, "/api/subir", `{"ids":["db"]}`); resp.Code != http.StatusOK {
 		t.Fatalf("primeira subida: %d %s", resp.Code, resp.Body)
 	}
-	resp := chamar(t, h, http.MethodPost, "/api/subir", `{"ids":["db"]}`)
-	if resp.Code != http.StatusConflict {
-		t.Fatalf("segunda subida deveria dar 409, veio %d", resp.Code)
+	// Outro projeto, com o db ainda subindo: nao pode mais ser recusado.
+	resp := chamar(t, h, http.MethodPost, "/api/subir", `{"ids":["rabbit"]}`)
+	if resp.Code != http.StatusOK {
+		t.Fatalf("segunda subida deveria ser aceita, veio %d %s", resp.Code, resp.Body)
 	}
 }
 

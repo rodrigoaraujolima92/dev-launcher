@@ -55,10 +55,23 @@ func (a *anel) tudo() []string {
 	return append([]string{}, a.itens...)
 }
 
+// tarefa e a subida de UM servico. Fica registrada no Gerente enquanto anda, para que uma
+// segunda subida que precise do mesmo servico espere por esta em vez de inicia-lo de novo.
 type tarefa struct {
-	once sync.Once
-	err  error
-	done chan struct{}
+	once     sync.Once
+	err      error
+	done     chan struct{}
+	ctx      context.Context
+	cancelar context.CancelFunc
+}
+
+func (t *tarefa) terminou() bool {
+	select {
+	case <-t.done:
+		return true
+	default:
+		return false
+	}
 }
 
 type Gerente struct {
@@ -79,9 +92,9 @@ type Gerente struct {
 	logs         map[string]*anel
 	inscritos    map[int]chan []byte
 	proxID       int
-	intervalo    time.Duration // de quanto em quanto tempo repete a checagem de "pronto"
-	subindo      bool
-	ultimoDocker string // ultimo estado do docker publicado, para nao repetir evento igual
+	intervalo    time.Duration      // de quanto em quanto tempo repete a checagem de "pronto"
+	emCurso      map[string]*tarefa // servicos no meio de uma subida
+	ultimoDocker string             // ultimo estado do docker publicado, para nao repetir evento igual
 }
 
 func NovoGerente(raiz, raizNavegacao, caminhoCfg string, cfg *Config, exe Executor, docker SondaDocker, git *CacheGit) *Gerente {
@@ -97,6 +110,7 @@ func NovoGerente(raiz, raizNavegacao, caminhoCfg string, cfg *Config, exe Execut
 		logs:          map[string]*anel{},
 		inscritos:     map[int]chan []byte{},
 		intervalo:     time.Second,
+		emCurso:       map[string]*tarefa{},
 	}
 	for _, s := range cfg.Servicos {
 		g.estados[s.ID] = &Estado{ID: s.ID, Status: StatusParado, Desde: time.Now()}
@@ -361,16 +375,12 @@ func (g *Gerente) Planejar(ids []string) Plano {
 	return Plano{IDs: completos, Ondas: ondas(g.cfg, completos)}
 }
 
-var ErrSubidaEmAndamento = errors.New("ja existe uma subida em andamento")
-
 // Subir dispara a orquestracao em segundo plano e devolve o plano na hora - quem acompanha
-// o andamento e o SSE. Uma subida por vez: duas em paralelo disputariam as mesmas portas.
+// o andamento e o SSE. Varias subidas andam ao mesmo tempo: a trava e por servico, nao
+// global. Quem ja esta no meio de outra subida nao e iniciado de novo (seriam dois processos
+// disputando a mesma porta) - a subida nova so espera por ele.
 func (g *Gerente) Subir(ctx context.Context, ids []string) (Plano, error) {
 	g.mu.Lock()
-	if g.subindo {
-		g.mu.Unlock()
-		return Plano{}, ErrSubidaEmAndamento
-	}
 	cfg := g.cfg
 	completos := expandirDependencias(cfg, ids)
 	if len(completos) == 0 {
@@ -378,33 +388,39 @@ func (g *Gerente) Subir(ctx context.Context, ids []string) (Plano, error) {
 		return Plano{}, errors.New("nenhum servico selecionado")
 	}
 	plano := Plano{IDs: completos, Ondas: ondas(cfg, completos)}
-	g.subindo = true
-	g.mu.Unlock()
 
 	conjunto := map[string]bool{}
+	tarefas := map[string]*tarefa{}
+	novos := []string{}
 	for _, id := range completos {
 		conjunto[id] = true
+		if t, ok := g.emCurso[id]; ok && !t.terminou() {
+			tarefas[id] = t
+			continue
+		}
+		// Contexto proprio por servico: e o que deixa o "parar" cancelar so este.
+		tctx, cancelar := context.WithCancel(ctx)
+		t := &tarefa{done: make(chan struct{}), ctx: tctx, cancelar: cancelar}
+		g.emCurso[id] = t
+		tarefas[id] = t
+		novos = append(novos, id)
 	}
-	tarefas := map[string]*tarefa{}
-	for _, id := range completos {
-		tarefas[id] = &tarefa{done: make(chan struct{})}
+	g.mu.Unlock()
+
+	for _, id := range novos {
 		g.marcar(id, StatusEsperando, "na fila")
 	}
 
 	go func() {
-		var wg sync.WaitGroup
-		for _, id := range completos {
-			wg.Add(1)
-			go func(id string) {
-				defer wg.Done()
-				g.executar(ctx, id, conjunto, tarefas)
-			}(id)
+		for _, id := range novos {
+			go g.executar(id, conjunto, tarefas)
 		}
-		wg.Wait()
-		g.mu.Lock()
-		g.subindo = false
-		g.mu.Unlock()
-		g.emitir(map[string]any{"tipo": "fim"})
+		// Espera todos do plano, inclusive os que vieram de outra subida: o "fim" quer dizer
+		// que nada do que foi pedido aqui esta mais andando.
+		for _, t := range tarefas {
+			<-t.done
+		}
+		g.emitir(map[string]any{"tipo": "fim", "ids": completos})
 	}()
 
 	return plano, nil
@@ -416,10 +432,29 @@ func (g *Gerente) servico(id string) *Servico {
 	return g.cfg.porID(id)
 }
 
-func (g *Gerente) executar(ctx context.Context, id string, conjunto map[string]bool, tarefas map[string]*tarefa) {
+func (g *Gerente) executar(id string, conjunto map[string]bool, tarefas map[string]*tarefa) {
 	t := tarefas[id]
+	ctx := t.ctx
 	t.once.Do(func() {
 		defer close(t.done)
+		defer func() {
+			g.mu.Lock()
+			if g.emCurso[id] == t {
+				delete(g.emCurso, id)
+			}
+			g.mu.Unlock()
+		}()
+
+		// falhar registra o motivo. Cancelamento nao e erro do servico: alguem mandou parar no
+		// meio da subida, entao ele volta a "parado" em vez de ficar vermelho.
+		falhar := func(err error) {
+			t.err = err
+			if ctx.Err() != nil {
+				g.marcar(id, StatusParado, "subida cancelada")
+				return
+			}
+			g.marcar(id, StatusErro, err.Error())
+		}
 
 		s := g.servico(id)
 		if s == nil {
@@ -437,13 +472,16 @@ func (g *Gerente) executar(ctx context.Context, id string, conjunto map[string]b
 			select {
 			case <-tarefas[d].done:
 			case <-ctx.Done():
-				t.err = ctx.Err()
-				g.marcar(id, StatusErro, "cancelado")
+				falhar(ctx.Err())
 				return
 			}
-			if tarefas[d].err != nil {
-				t.err = fmt.Errorf("dependencia %s falhou", d)
-				g.marcar(id, StatusBloqueado, "dependencia "+d+" falhou")
+			if err := tarefas[d].err; err != nil {
+				motivo := "falhou"
+				if errors.Is(err, context.Canceled) {
+					motivo = "foi cancelada"
+				}
+				t.err = fmt.Errorf("dependencia %s %s", d, motivo)
+				g.marcar(id, StatusBloqueado, "dependencia "+d+" "+motivo)
 				return
 			}
 		}
@@ -455,13 +493,11 @@ func (g *Gerente) executar(ctx context.Context, id string, conjunto map[string]b
 
 		g.marcar(id, StatusSubindo, "")
 		if err := g.exec.Iniciar(ctx, s); err != nil {
-			t.err = err
-			g.marcar(id, StatusErro, err.Error())
+			falhar(err)
 			return
 		}
 		if err := g.esperarPronto(ctx, s); err != nil {
-			t.err = err
-			g.marcar(id, StatusErro, err.Error())
+			falhar(err)
 			return
 		}
 		g.marcar(id, StatusPronto, "")
@@ -493,7 +529,28 @@ func (g *Gerente) esperarPronto(ctx context.Context, s *Servico) error {
 // Parada
 // ------------------------------------------------------------------
 
+// Parar derruba os servicos. Quem estiver no meio de uma subida tem a subida cancelada
+// antes - senao ela continuaria esperando o "pronto" de um processo que acabou de morrer, ate
+// estourar o timeout.
 func (g *Gerente) Parar(ctx context.Context, ids []string) []error {
+	// Cancela todos de uma vez antes de parar um por um: assim nenhum dependente chega a
+	// arrancar enquanto os primeiros da lista ainda estao sendo derrubados.
+	cancelados := []*tarefa{}
+	g.mu.Lock()
+	for _, id := range ids {
+		if t, ok := g.emCurso[id]; ok {
+			t.cancelar()
+			cancelados = append(cancelados, t)
+		}
+	}
+	g.mu.Unlock()
+	for _, t := range cancelados {
+		select {
+		case <-t.done:
+		case <-time.After(15 * time.Second): // Iniciar preso num comando: para assim mesmo
+		}
+	}
+
 	var erros []error
 	for _, id := range ids {
 		s := g.servico(id)
@@ -855,7 +912,6 @@ func (g *Gerente) AbrirDocker(ctx context.Context) error {
 func (g *Gerente) varrer(ctx context.Context) {
 	g.mu.Lock()
 	servicos := append([]*Servico{}, g.cfg.Servicos...)
-	ocupado := g.subindo
 	g.mu.Unlock()
 
 	for _, s := range servicos {
@@ -864,10 +920,11 @@ func (g *Gerente) varrer(ctx context.Context) {
 		if e, ok := g.estados[s.ID]; ok {
 			status = e.Status
 		}
+		_, subindo := g.emCurso[s.ID]
 		g.mu.Unlock()
 
-		// Enquanto uma subida esta em andamento, quem manda no status e a orquestracao.
-		if ocupado && (status == StatusSubindo || status == StatusEsperando) {
+		// Enquanto o servico esta no meio de uma subida, quem manda no status e a orquestracao.
+		if subindo {
 			continue
 		}
 		if g.exec.Pronto(ctx, s) {

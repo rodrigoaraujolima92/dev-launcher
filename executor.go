@@ -127,7 +127,9 @@ func (e *ExecutorSO) iniciarApp(ctx context.Context, s *Servico) error {
 			args := []string{"-w", "appdaturma", "new-tab", "--title", s.Nome, "-d", dir,
 				shell, "-NoExit", "-Command", s.Cmd}
 			e.logar(s.ID, "> wt new-tab %s", s.Nome)
-			if err := exec.CommandContext(ctx, "wt", args...).Start(); err != nil {
+			// exec.Command, e nao CommandContext: a aba tem que sobreviver ao contexto da
+			// subida, que agora pode ser cancelado pelo "parar".
+			if err := exec.Command("wt", args...).Start(); err != nil {
 				return fmt.Errorf("nao consegui abrir a aba do Windows Terminal: %w", err)
 			}
 			return nil

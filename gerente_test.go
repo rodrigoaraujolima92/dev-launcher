@@ -378,17 +378,130 @@ func TestServicoQueNuncaFicaProntoViraErroPorTimeout(t *testing.T) {
 	}
 }
 
-func TestDuasSubidasAoMesmoTempoSaoRecusadas(t *testing.T) {
-	g, _, _ := gerenteTeste(t, map[string]comportamento{
-		"db": {demora: 300 * time.Millisecond},
+// esperarStatus aguarda o servico chegar no status pedido - as subidas concorrentes nao tem
+// um unico evento "fim" para se pendurar.
+func esperarStatus(t *testing.T, g *Gerente, id, status string, prazo time.Duration) {
+	t.Helper()
+	limite := time.Now().Add(prazo)
+	for time.Now().Before(limite) {
+		if e := statusDe(g, id); e != nil && e.Status == status {
+			return
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	t.Fatalf("%s nao chegou em %q em %s; estados: %s", id, status, prazo, resumo(g))
+}
+
+func TestSubirOutroProjetoEnquantoUmAindaSobe(t *testing.T) {
+	g, fake, _ := gerenteTeste(t, map[string]comportamento{
+		"db":     {demora: 400 * time.Millisecond},
+		"rabbit": {demora: 10 * time.Millisecond},
 	})
 
 	if _, err := g.Subir(context.Background(), []string{"db"}); err != nil {
 		t.Fatalf("primeira subida: %v", err)
 	}
-	if _, err := g.Subir(context.Background(), []string{"db"}); !errors.Is(err, ErrSubidaEmAndamento) {
-		t.Fatalf("segunda subida deveria ser recusada, veio %v", err)
+	// O db ainda esta longe de ficar pronto: o rabbit tem que subir sem esperar por ele.
+	if _, err := g.Subir(context.Background(), []string{"rabbit"}); err != nil {
+		t.Fatalf("segunda subida, com a primeira em andamento, deveria ser aceita: %v", err)
 	}
+	esperarStatus(t, g, "rabbit", StatusPronto, 300*time.Millisecond)
+	if e := statusDe(g, "db"); e.Status != StatusSubindo {
+		t.Fatalf("o db deveria continuar subindo, veio %s", e.Status)
+	}
+	esperarStatus(t, g, "db", StatusPronto, 2*time.Second)
+
+	if ordem, _, _ := fake.instantaneo(); len(ordem) != 2 {
+		t.Fatalf("esperava um inicio de cada, veio %v", ordem)
+	}
+}
+
+func TestSubirDuasVezesOMesmoNaoIniciaDoisProcessos(t *testing.T) {
+	g, fake, _ := gerenteTeste(t, map[string]comportamento{
+		"db":     {demora: 150 * time.Millisecond},
+		"rabbit": {demora: 150 * time.Millisecond},
+		"api":    {demora: 10 * time.Millisecond},
+	})
+
+	if _, err := g.Subir(context.Background(), []string{"db"}); err != nil {
+		t.Fatal(err)
+	}
+	// Clique dobrado no mesmo projeto, e uma subida que precisa dele como dependencia.
+	if _, err := g.Subir(context.Background(), []string{"db"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := g.Subir(context.Background(), []string{"api"}); err != nil {
+		t.Fatal(err)
+	}
+	esperarStatus(t, g, "api", StatusPronto, 5*time.Second)
+
+	ordem, prontosAo, _ := fake.instantaneo()
+	vezes := 0
+	for _, id := range ordem {
+		if id == "db" {
+			vezes++
+		}
+	}
+	if vezes != 1 {
+		t.Fatalf("o db foi iniciado %d vezes, queria 1: %v", vezes, ordem)
+	}
+	// A api entrou por outra subida, mas esperou o db que ja vinha subindo.
+	if !contem(prontosAo["api"], "db") {
+		t.Fatalf("api iniciou com o db ainda nao pronto (prontos: %v)", prontosAo["api"])
+	}
+}
+
+func TestPararNoMeioDaSubidaCancelaELiberaOServico(t *testing.T) {
+	g, fake, cfg := gerenteTeste(t, map[string]comportamento{
+		"db":     {nunca: true},
+		"rabbit": {demora: 5 * time.Millisecond},
+	})
+	cfg.porID("db").Timeout = 60 // sem o cancelamento, a subida ficaria um minuto presa
+
+	inscricao, ch := g.Inscrever()
+	defer g.Desinscrever(inscricao)
+
+	if _, err := g.Subir(context.Background(), []string{"api"}); err != nil {
+		t.Fatal(err)
+	}
+	esperarStatus(t, g, "db", StatusSubindo, time.Second)
+
+	if erros := g.Parar(context.Background(), []string{"db"}); len(erros) != 0 {
+		t.Fatalf("parar: %v", erros)
+	}
+	// Parado, e nao erro: foi o usuario que mandou parar.
+	if e := statusDe(g, "db"); e.Status != StatusParado {
+		t.Fatalf("db deveria ficar parado, veio %s (%s)", e.Status, e.Mensagem)
+	}
+
+	// A subida inteira tem que terminar logo, e a api - que esperava o db - nao pode arrancar.
+	limite := time.After(2 * time.Second)
+	for terminou := false; !terminou; {
+		select {
+		case dados := <-ch:
+			var evento struct {
+				Tipo string `json:"tipo"`
+			}
+			terminou = json.Unmarshal(dados, &evento) == nil && evento.Tipo == "fim"
+		case <-limite:
+			t.Fatalf("a subida nao terminou depois do parar; estados: %s", resumo(g))
+		}
+	}
+	if e := statusDe(g, "api"); e.Status != StatusBloqueado {
+		t.Fatalf("api deveria ficar bloqueada, veio %s (%s)", e.Status, e.Mensagem)
+	}
+	if ordem, _, _ := fake.instantaneo(); contem(ordem, "api") {
+		t.Fatalf("a api nao deveria ter sido iniciada: %v", ordem)
+	}
+
+	// E o servico fica livre: da para mandar subir de novo na hora.
+	fake.mu.Lock()
+	fake.comp["db"] = comportamento{demora: 5 * time.Millisecond}
+	fake.mu.Unlock()
+	if _, err := g.Subir(context.Background(), []string{"db"}); err != nil {
+		t.Fatal(err)
+	}
+	esperarStatus(t, g, "db", StatusPronto, 2*time.Second)
 }
 
 func TestSubirSemNadaSelecionadoDaErro(t *testing.T) {
