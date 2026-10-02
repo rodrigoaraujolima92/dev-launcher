@@ -1,7 +1,7 @@
 {
   "porta_ui": 7010,
   "rede_docker": "PRODUCTION",
-  "raiz_projetos": "..",
+  "raiz_navegacao": "C:\\Users\\Pichau\\projetos",
   "grupos": [
     {
       "id": "infra",
@@ -177,7 +177,7 @@
       "grupo": "api",
       "tipo": "app",
       "dir": "appdaturma/appdaturma-backend",
-      "cmd": "& './run-local.ps1'",
+      "cmd": "\u0026 './run-local.ps1'",
       "porta": 7003,
       "url": "http://localhost:7003",
       "pronto": {
@@ -251,7 +251,25 @@
       "timeout": 120,
       "modo": "gerenciado",
       "depende": [],
-      "selecionado": true
+      "selecionado": false
+    },
+    {
+      "id": "cabine-foto-gestao",
+      "nome": "cabine-foto-gestao",
+      "grupo": "photonow",
+      "tipo": "app",
+      "dir": "photonow/cabine-foto-gestao",
+      "cmd": "npm run serve",
+      "porta": 8081,
+      "url": "http://localhost:8081",
+      "pronto": {
+        "tipo": "porta",
+        "porta": 8081
+      },
+      "timeout": 120,
+      "modo": "gerenciado",
+      "depende": [],
+      "selecionado": false
     }
   ]
 }
