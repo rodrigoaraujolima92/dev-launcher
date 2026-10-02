@@ -1,7 +1,7 @@
 {
   "porta_ui": 7010,
   "rede_docker": "PRODUCTION",
-  "raiz_navegacao": "C:\\Users\\Pichau\\projetos",
+  "raiz_projetos": "..",
   "grupos": [
     {
       "id": "infra",
@@ -177,7 +177,7 @@
       "grupo": "api",
       "tipo": "app",
       "dir": "appdaturma/appdaturma-backend",
-      "cmd": "\u0026 './run-local.ps1'",
+      "cmd": "& './run-local.ps1'",
       "porta": 7003,
       "url": "http://localhost:7003",
       "pronto": {
