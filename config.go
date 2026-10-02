@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -117,13 +118,18 @@ func salvarConfig(caminho string, cfg *Config) error {
 	if err := cfg.validar(); err != nil {
 		return err
 	}
-	dados, err := json.MarshalIndent(cfg, "", "  ")
-	if err != nil {
+	// Encoder em vez de MarshalIndent so para desligar o escape de HTML: o padrao troca
+	// "&", "<" e ">" por & e companhia, e o comando "& './run-local.ps1'" voltava
+	// ilegivel (e como diff) a cada salvamento.
+	var dados bytes.Buffer
+	enc := json.NewEncoder(&dados)
+	enc.SetEscapeHTML(false)
+	enc.SetIndent("", "  ")
+	if err := enc.Encode(cfg); err != nil {
 		return err
 	}
-	dados = append(dados, '\n')
 	tmp := caminho + ".tmp"
-	if err := os.WriteFile(tmp, dados, 0o644); err != nil {
+	if err := os.WriteFile(tmp, dados.Bytes(), 0o644); err != nil {
 		return err
 	}
 	return os.Rename(tmp, caminho)
@@ -928,6 +934,7 @@ func clonarConfig(c *Config) *Config {
 	novo := &Config{
 		PortaUI:       c.PortaUI,
 		RedeDocker:    c.RedeDocker,
+		RaizProjetos:  c.RaizProjetos,
 		RaizNavegacao: c.RaizNavegacao,
 		PerfilAtivo:   c.PerfilAtivo,
 		Grupos:        []*Grupo{},
@@ -1010,6 +1017,32 @@ func resolverRaiz(daFlag, doAmbiente, doConfig, caminhoCfg string) (string, Orig
 		}
 	}
 	return filepath.Clean(filepath.Dir(pastaCfg)), RaizPadrao
+}
+
+// resolverRaizNavegacao decide onde o seletor de pastas comeca (e a cerca do cadastro):
+// vazio vale a propria raiz; relativo resolve contra a pasta do config, como raiz_projetos.
+// O resultado fica so na memoria do launcher - o config guarda o valor como foi escrito,
+// senao o primeiro salvamento gravaria o caminho absoluto desta maquina.
+func resolverRaizNavegacao(doConfig, raiz, caminhoCfg string) string {
+	doConfig = strings.TrimSpace(doConfig)
+	if doConfig == "" {
+		return raiz
+	}
+	if !filepath.IsAbs(doConfig) {
+		doConfig = filepath.Join(filepath.Dir(caminhoCfg), filepath.FromSlash(doConfig))
+	}
+	return filepath.Clean(doConfig)
+}
+
+// resolverPortaUI decide a porta da interface: -porta > porta_ui do config > 7010.
+func resolverPortaUI(daFlag, doConfig int) int {
+	if daFlag > 0 {
+		return daFlag
+	}
+	if doConfig > 0 {
+		return doConfig
+	}
+	return 7010
 }
 
 // tornarRelativo devolve o caminho relativo a raiz quando ele esta dentro dela, com barras

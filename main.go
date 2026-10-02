@@ -50,20 +50,13 @@ func main() {
 		log.Fatalf("a pasta base nao existe: %s (veio de %s)", raiz, origemRaiz)
 	}
 
-	if *porta > 0 {
-		cfg.PortaUI = *porta
-	}
-	if cfg.PortaUI == 0 {
-		cfg.PortaUI = 7010
-	}
-	// Navegacao vazia comeca na propria raiz; relativa, resolve contra a pasta do config.
-	if cfg.RaizNavegacao == "" {
-		cfg.RaizNavegacao = raiz
-	} else if !filepath.IsAbs(cfg.RaizNavegacao) {
-		cfg.RaizNavegacao = filepath.Clean(filepath.Join(filepath.Dir(cfgPath), filepath.FromSlash(cfg.RaizNavegacao)))
-	}
+	// Porta e raiz de navegacao sao resolvidas fora do cfg de proposito: o cfg e o que vai
+	// para o disco. -porta vale so para esta execucao, e a raiz_navegacao tem que continuar
+	// no arquivo como foi escrita (vazia ou relativa).
+	portaUI := resolverPortaUI(*porta, cfg.PortaUI)
+	raizNavegacao := resolverRaizNavegacao(cfg.RaizNavegacao, raiz, cfgPath)
 
-	endereco := "127.0.0.1:" + strconv.Itoa(cfg.PortaUI)
+	endereco := "127.0.0.1:" + strconv.Itoa(portaUI)
 
 	// -encerrar nao sobe nada: so pede para a instancia que esta de pe se encerrar. E a
 	// saida para quando o launcher subiu sem console (janela oculta) e nao tem Ctrl+C.
@@ -78,7 +71,7 @@ func main() {
 
 	sonda := NovaSondaDockerSO()
 	exe := NovoExecutorSO(raiz, cfg.RedeDocker, sonda)
-	g := NovoGerente(raiz, cfgPath, cfg, exe, sonda, NovoCacheGit(SondaGitSO{}))
+	g := NovoGerente(raiz, raizNavegacao, cfgPath, cfg, exe, sonda, NovoCacheGit(SondaGitSO{}))
 	exe.aoLogar = g.RegistrarLog
 	exe.aoTerPID = func(id string, pid int) { g.definirPID(id, pid) }
 	exe.aoEncerra = func(id, mensagem string) {
@@ -630,7 +623,7 @@ func mustJSON(v any) []byte {
 // caminhoPedido resolve o "caminho" da query e aplica a cerca: fora da raiz de navegacao
 // so com livre=1, que na tela e o checkbox "usar caminho fora da pasta de projetos".
 func caminhoPedido(g *Gerente, r *http.Request) (caminho string, raizNav string, err error) {
-	raizNav = g.Config().RaizNavegacao
+	raizNav = g.raizNavegacao
 	caminho = strings.TrimSpace(r.URL.Query().Get("caminho"))
 	if caminho == "" {
 		caminho = raizNav

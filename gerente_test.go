@@ -196,7 +196,7 @@ func gerenteTeste(t *testing.T, comp map[string]comportamento) (*Gerente, *execF
 	t.Helper()
 	cfg := configTeste()
 	fake := novoExecFake(cfg.ids(), comp)
-	g := NovoGerente(t.TempDir(), "", cfg, fake, &dockerFake{estado: EstadoDocker{Rodando: true, Versao: "27.0"}}, NovoCacheGit(novoGitFake()))
+	g := NovoGerente(t.TempDir(), "", "", cfg, fake, &dockerFake{estado: EstadoDocker{Rodando: true, Versao: "27.0"}}, NovoCacheGit(novoGitFake()))
 	g.intervalo = 5 * time.Millisecond // nos testes a checagem de "pronto" e bem mais rapida
 	return g, fake, cfg
 }
@@ -438,7 +438,7 @@ func TestEditarGravaNoDiscoEAvisaATela(t *testing.T) {
 	if err := salvarConfig(caminho, cfg); err != nil {
 		t.Fatal(err)
 	}
-	g := NovoGerente(t.TempDir(), caminho, cfg, novoExecFake(cfg.ids(), nil), &dockerFake{}, NovoCacheGit(novoGitFake()))
+	g := NovoGerente(t.TempDir(), "", caminho, cfg, novoExecFake(cfg.ids(), nil), &dockerFake{}, NovoCacheGit(novoGitFake()))
 
 	inscricao, ch := g.Inscrever()
 	defer g.Desinscrever(inscricao)
@@ -479,7 +479,7 @@ func TestEditarInvalidoNaoTocaNoArquivo(t *testing.T) {
 	}
 	antes, _ := os.ReadFile(caminho)
 
-	g := NovoGerente(t.TempDir(), caminho, cfg, novoExecFake(cfg.ids(), nil), &dockerFake{}, NovoCacheGit(novoGitFake()))
+	g := NovoGerente(t.TempDir(), "", caminho, cfg, novoExecFake(cfg.ids(), nil), &dockerFake{}, NovoCacheGit(novoGitFake()))
 	if err := g.Editar([]EdicaoServico{{ID: "db", Depende: []string{"web"}}}); err == nil {
 		t.Fatal("ciclo deveria ser recusado")
 	}
