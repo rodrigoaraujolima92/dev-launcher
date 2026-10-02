@@ -1,20 +1,29 @@
+/* Direcao visual: um painel calmo. Grafite neutro, texto em fonte de leitura (a mono fica so
+   para o que e de maquina: caminho, comando, porta, log), cantos suaves e pouca borda. A cor
+   de destaque aparece so na acao principal e na selecao; o resto da cor e estado. */
 :root {
-  --tinta: #080b0a;
-  --painel: #0f1514;
-  --painel-alto: #141d1b;
-  --linha: rgba(125, 173, 160, 0.16);
-  --linha-forte: rgba(125, 173, 160, 0.32);
-  --texto: #d9e4e0;
-  --fraco: #7b8d88;
-  --ambar: #ffb020;
-  --ambar-fraco: rgba(255, 176, 32, 0.14);
-  --verde: #49dd8b;
-  --azul: #63cdff;
-  --vermelho: #ff6257;
-  --roxo: #b79bff;
-  --raio: 3px;
+  --tinta: #0e1014;        /* fundo da pagina */
+  --painel: #151820;       /* cartoes e paineis */
+  --painel-alto: #1c2029;  /* hover, botoes, itens elevados */
+  --poco: #0a0c10;         /* rebaixado: campos e log */
+  --linha: rgba(255, 255, 255, 0.07);
+  --linha-forte: rgba(255, 255, 255, 0.13);
+  --texto: #e8eaee;
+  --suave: #a9b0bd;        /* texto secundario */
+  --fraco: #717988;        /* texto terciario, rotulos */
+  --ambar: #f2a65a;        /* destaque */
+  --ambar-vivo: #ffbb78;
+  --ambar-fraco: rgba(242, 166, 90, 0.13);
+  --verde: #5ad19a;
+  --azul: #6cb4ff;
+  --vermelho: #ff7b72;
+  --raio: 12px;
+  --raio-p: 8px;
+  --alt-topo: 64px;
+  --alt-barra: 50px;
+  --sans: "IBM Plex Sans", "Segoe UI", system-ui, sans-serif;
   --mono: "IBM Plex Mono", ui-monospace, "Cascadia Mono", Consolas, monospace;
-  --display: "Chakra Petch", "IBM Plex Mono", ui-monospace, sans-serif;
+  --display: "Bricolage Grotesque", "IBM Plex Sans", "Segoe UI", sans-serif;
 }
 
 * { box-sizing: border-box; }
@@ -27,12 +36,15 @@ html, body {
   min-height: 100%;
   background: var(--tinta);
   color: var(--texto);
-  font-family: var(--mono);
-  font-size: 13px;
+  font-family: var(--sans);
+  font-size: 13.5px;
   line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
 }
 
-/* Textura de fundo: grade fina + brilho quente no topo esquerdo.
+button, input, select, textarea { font-family: inherit; }
+
+/* Fundo: dois brilhos largos e bem fracos, so para a pagina nao ser um preto chapado.
    Fica atras de tudo e nao intercepta clique. */
 .textura {
   position: fixed;
@@ -40,11 +52,14 @@ html, body {
   z-index: -1;
   pointer-events: none;
   background:
-    radial-gradient(900px 500px at 8% -10%, rgba(255, 176, 32, 0.07), transparent 70%),
-    radial-gradient(700px 500px at 100% 0%, rgba(99, 205, 255, 0.05), transparent 65%),
-    linear-gradient(transparent 95%, rgba(125, 173, 160, 0.05) 95%),
-    linear-gradient(90deg, transparent 95%, rgba(125, 173, 160, 0.05) 95%);
-  background-size: auto, auto, 28px 28px, 28px 28px;
+    radial-gradient(1100px 520px at 12% -12%, rgba(242, 166, 90, 0.07), transparent 70%),
+    radial-gradient(900px 560px at 100% -5%, rgba(108, 180, 255, 0.06), transparent 68%);
+}
+
+/* Foco de teclado visivel em tudo que e clicavel - o padrao do navegador some no tema escuro. */
+button:focus-visible, a:focus-visible, summary:focus-visible, select:focus-visible {
+  outline: 2px solid var(--ambar);
+  outline-offset: 2px;
 }
 
 /* ---------------- topo ---------------- */
@@ -55,95 +70,123 @@ html, body {
   z-index: 20;
   display: flex;
   align-items: center;
-  gap: 24px;
-  padding: 14px 22px;
-  background: rgba(8, 11, 10, 0.88);
-  backdrop-filter: blur(8px);
+  gap: 20px;
+  height: var(--alt-topo);
+  padding: 0 28px;
+  background: rgba(14, 16, 20, 0.82);
+  backdrop-filter: blur(14px);
   border-bottom: 1px solid var(--linha);
 }
 
-.marca { display: flex; align-items: center; gap: 12px; }
+.marca { display: flex; align-items: center; gap: 12px; min-width: 0; }
 
 .sigla {
   display: grid;
   place-items: center;
-  width: 38px;
-  height: 38px;
+  flex: none;
+  width: 36px;
+  height: 36px;
   font-family: var(--display);
   font-weight: 700;
-  font-size: 13px;
-  letter-spacing: 0.06em;
-  color: var(--tinta);
-  background: var(--ambar);
-  clip-path: polygon(0 0, 100% 0, 100% 72%, 72% 100%, 0 100%);
+  font-size: 12px;
+  letter-spacing: 0.02em;
+  color: #201305;
+  background: linear-gradient(140deg, var(--ambar-vivo), var(--ambar) 60%, #e08a3c);
+  border-radius: 11px;
+  box-shadow: 0 6px 18px rgba(242, 166, 90, 0.22);
 }
 
+.titulo { min-width: 0; }
 .titulo h1 {
   margin: 0;
   font-family: var(--display);
   font-size: 17px;
-  font-weight: 700;
-  letter-spacing: 0.16em;
-  text-transform: uppercase;
+  font-weight: 650;
+  letter-spacing: -0.01em;
+  line-height: 1.2;
+}
+.titulo p {
+  margin: 1px 0 0;
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--fraco);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
-.titulo p { margin: 0; color: var(--fraco); font-size: 11px; letter-spacing: 0.04em; }
+.medidores { display: flex; gap: 6px; margin-left: auto; }
 
-.medidores { display: flex; gap: 18px; margin-left: auto; }
-
-.medidor { text-align: right; }
-.medidor b {
-  display: block;
-  font-family: var(--display);
-  font-size: 19px;
-  font-weight: 600;
-  line-height: 1;
+/* Os contadores sao botoes: clicar filtra a lista por aquele estado. */
+.medidor {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 6px 12px 6px 10px;
+  font-size: 12.5px;
+  color: var(--suave);
+  background: var(--painel);
+  border: 1px solid var(--linha);
+  border-radius: 999px;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
 }
-.medidor span { font-size: 10px; text-transform: uppercase; letter-spacing: 0.12em; color: var(--fraco); }
-.medidor.pronto b { color: var(--verde); }
-.medidor.andando b { color: var(--azul); }
-.medidor.falha b { color: var(--vermelho); }
+.medidor::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
+.medidor.pronto::before { color: var(--verde); }
+.medidor.andando::before { color: var(--azul); }
+.medidor.falha::before { color: var(--vermelho); }
+.medidor b { font-family: var(--display); font-size: 14px; font-weight: 650; color: var(--texto); font-variant-numeric: tabular-nums; }
+.medidor span { color: var(--suave); }
+.medidor:hover { background: var(--painel-alto); border-color: var(--linha-forte); }
+.medidor.pronto[aria-pressed="true"] { background: rgba(90, 209, 154, 0.12); border-color: rgba(90, 209, 154, 0.5); }
+.medidor.andando[aria-pressed="true"] { background: rgba(108, 180, 255, 0.12); border-color: rgba(108, 180, 255, 0.5); }
+.medidor.falha[aria-pressed="true"] { background: rgba(255, 123, 114, 0.12); border-color: rgba(255, 123, 114, 0.5); }
+.medidor[aria-pressed="true"] span { color: var(--texto); }
 
 .acoes-topo { display: flex; gap: 8px; }
 
 .botao {
-  font-family: var(--display);
-  font-size: 12px;
-  font-weight: 600;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
+  padding: 8px 14px;
+  font-size: 13px;
+  font-weight: 500;
   color: var(--texto);
   background: var(--painel-alto);
   border: 1px solid var(--linha-forte);
-  border-radius: var(--raio);
-  padding: 10px 14px;
+  border-radius: var(--raio-p);
   cursor: pointer;
+  white-space: nowrap;
   transition: background 0.15s, border-color 0.15s, transform 0.08s;
 }
-.botao:hover { background: #1b2725; border-color: var(--fraco); }
+.botao:hover { background: #232834; border-color: rgba(255, 255, 255, 0.2); }
 .botao:active { transform: translateY(1px); }
 
 .botao.primario {
   display: flex;
   align-items: center;
-  gap: 10px;
-  color: #17110a;
+  gap: 9px;
+  font-weight: 600;
+  color: #201305;
   background: var(--ambar);
   border-color: var(--ambar);
-  box-shadow: 0 0 0 0 rgba(255, 176, 32, 0.5);
 }
-.botao.primario:hover { background: #ffc04d; border-color: #ffc04d; }
+.botao.primario:hover { background: var(--ambar-vivo); border-color: var(--ambar-vivo); }
 .botao.primario .contador {
   min-width: 20px;
-  padding: 1px 5px;
-  font-family: var(--mono);
-  font-size: 11px;
-  background: rgba(0, 0, 0, 0.22);
-  border-radius: 2px;
+  padding: 0 6px;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  background: rgba(32, 19, 5, 0.18);
+  border-radius: 999px;
 }
 .botao[disabled] { opacity: 0.45; cursor: not-allowed; }
-.botao.discreto { color: var(--fraco); background: none; border-color: var(--linha); }
-.botao.discreto:hover { color: var(--vermelho); border-color: var(--vermelho); background: none; }
+.botao.discreto { color: var(--suave); background: none; border-color: transparent; }
+.botao.discreto:hover { color: var(--vermelho); background: rgba(255, 123, 114, 0.1); border-color: transparent; }
+.botao.ocupado { animation: pulsar 1.6s ease-in-out infinite; }
+
+@keyframes pulsar {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(242, 166, 90, 0.4); }
+  50% { box-shadow: 0 0 0 8px rgba(242, 166, 90, 0); }
+}
 
 /* Cortina de "encerrado": a pagina nao tem mais servidor atras, entao para de oferecer
    botoes que nao funcionariam. */
@@ -153,41 +196,130 @@ html, body {
   z-index: 60;
   display: grid;
   place-items: center;
-  background: rgba(6, 9, 8, 0.93);
-  backdrop-filter: blur(3px);
+  background: rgba(10, 12, 16, 0.92);
+  backdrop-filter: blur(6px);
 }
 .cortina-caixa {
   max-width: 440px;
-  padding: 26px 30px;
+  padding: 30px 34px;
   text-align: center;
-  background: linear-gradient(180deg, var(--painel-alto), var(--painel));
+  background: var(--painel);
   border: 1px solid var(--linha-forte);
-  border-left: 3px solid var(--ambar);
-  border-radius: var(--raio);
+  border-radius: 18px;
+  box-shadow: 0 30px 80px rgba(0, 0, 0, 0.5);
 }
-.cortina-caixa h2 {
-  margin: 0 0 10px;
-  font-family: var(--display);
-  font-size: 15px;
-  letter-spacing: 0.18em;
-  text-transform: uppercase;
-}
-.cortina-caixa p { margin: 0 0 6px; font-size: 12px; color: var(--fraco); }
-.cortina-caixa code { color: var(--ambar); }
-.botao.ocupado { animation: pulsar 1.4s ease-in-out infinite; }
+.cortina-caixa h2 { margin: 0 0 10px; font-family: var(--display); font-size: 19px; font-weight: 650; }
+.cortina-caixa p { margin: 0 0 6px; color: var(--suave); }
+.cortina-caixa code { font-family: var(--mono); font-size: 12.5px; color: var(--ambar); }
 
-@keyframes pulsar {
-  0%, 100% { box-shadow: 0 0 0 0 rgba(255, 176, 32, 0.45); }
-  50% { box-shadow: 0 0 0 7px rgba(255, 176, 32, 0); }
+/* ---------------- barra de perfis ---------------- */
+
+.barra-perfis {
+  position: sticky;
+  top: var(--alt-topo);
+  z-index: 18;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  height: var(--alt-barra);
+  padding: 0 28px;
+  background: rgba(14, 16, 20, 0.78);
+  backdrop-filter: blur(14px);
+  border-bottom: 1px solid var(--linha);
 }
+
+.rotulo-barra { font-size: 12px; color: var(--fraco); }
+
+/* Uma linha so: com muitos perfis a faixa rola de lado em vez de empurrar a pagina. */
+.perfis { display: flex; gap: 6px; flex: 1; min-width: 0; overflow-x: auto; scrollbar-width: none; }
+.perfis::-webkit-scrollbar { display: none; }
+
+.perfil {
+  display: flex;
+  align-items: center;
+  flex: none;
+  gap: 6px;
+  padding: 3px 4px 3px 12px;
+  font-size: 12.5px;
+  color: var(--suave);
+  background: var(--painel);
+  border: 1px solid var(--linha);
+  border-radius: 999px;
+  transition: border-color 0.15s, color 0.15s;
+}
+.perfil:hover { color: var(--texto); border-color: var(--linha-forte); }
+.perfil.ativo { color: var(--ambar-vivo); background: var(--ambar-fraco); border-color: rgba(242, 166, 90, 0.45); }
+.perfil .aplicar { padding: 0; font-size: inherit; font-weight: 500; color: inherit; background: none; border: 0; cursor: pointer; }
+.perfil .qtd { font-size: 11px; opacity: 0.65; font-variant-numeric: tabular-nums; }
+.perfil .editar-perfil {
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  line-height: 1;
+  color: inherit;
+  background: none;
+  border: 0;
+  border-radius: 50%;
+  cursor: pointer;
+  opacity: 0.6;
+}
+.perfil .editar-perfil:hover { opacity: 1; background: rgba(255, 255, 255, 0.08); }
+
+.acoes-barra { display: flex; gap: 6px; }
+
+.busca { position: relative; display: flex; align-items: center; }
+.busca input {
+  width: 200px;
+  padding: 6px 28px 6px 11px;
+  font-size: 12.5px;
+  color: var(--texto);
+  background: var(--poco);
+  border: 1px solid var(--linha);
+  border-radius: var(--raio-p);
+  transition: width 0.18s, border-color 0.15s, box-shadow 0.15s;
+}
+.busca input::placeholder { color: var(--fraco); }
+.busca input:focus { width: 260px; outline: none; border-color: var(--ambar); box-shadow: 0 0 0 3px var(--ambar-fraco); }
+.busca input::-webkit-search-cancel-button { filter: grayscale(1) brightness(1.6); cursor: pointer; }
+.busca kbd {
+  position: absolute;
+  right: 7px;
+  padding: 0 5px;
+  font-family: var(--mono);
+  font-size: 10.5px;
+  color: var(--fraco);
+  background: var(--painel-alto);
+  border-radius: 4px;
+  pointer-events: none;
+}
+
+/* ---------------- botoes pequenos ---------------- */
+
+.mini {
+  padding: 5px 10px;
+  font-size: 12.5px;
+  line-height: 1.35;
+  color: var(--suave);
+  background: var(--painel-alto);
+  border: 1px solid var(--linha);
+  border-radius: 7px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.12s, border-color 0.12s, color 0.12s;
+}
+.mini:hover { color: var(--texto); background: #242936; border-color: var(--linha-forte); }
+.mini.perigo:hover { color: var(--vermelho); border-color: rgba(255, 123, 114, 0.5); }
+.mini[disabled] { opacity: 0.45; cursor: not-allowed; }
+.mini.destaque { color: var(--ambar-vivo); background: var(--ambar-fraco); border-color: transparent; }
+.mini.destaque:hover { color: #201305; background: var(--ambar); border-color: var(--ambar); }
 
 /* ---------------- layout ---------------- */
 
 main {
   display: grid;
-  grid-template-columns: minmax(0, 1.5fr) minmax(320px, 0.75fr);
-  gap: 18px;
-  padding: 18px 22px 40px;
+  grid-template-columns: minmax(0, 1.6fr) minmax(340px, 0.8fr);
+  gap: 22px;
+  padding: 18px 28px 48px;
   align-items: start;
 }
 
@@ -195,110 +327,254 @@ main {
   main { grid-template-columns: minmax(0, 1fr); }
 }
 
-.coluna { display: flex; flex-direction: column; gap: 10px; }
+.coluna { display: flex; flex-direction: column; gap: 8px; }
+
+/* ---------------- cabecalho de grupo ---------------- */
 
 .grupo-titulo {
   display: flex;
   align-items: center;
   gap: 10px;
-  margin: 14px 2px 2px;
+  margin: 16px 2px 4px;
   font-family: var(--display);
-  font-size: 11px;
-  letter-spacing: 0.22em;
-  text-transform: uppercase;
-  color: var(--fraco);
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--suave);
 }
+.grupo-titulo:first-child { margin-top: 4px; }
 .grupo-titulo::after {
   content: "";
   flex: 1;
+  order: 3;
   height: 1px;
   background: linear-gradient(90deg, var(--linha), transparent);
 }
 
+/* Botao que recolhe grupo ou painel: herda a tipografia de onde esta e so acrescenta a seta. */
+.dobra {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 2px 4px 2px 0;
+  font: inherit;
+  color: inherit;
+  background: none;
+  border: 0;
+  cursor: pointer;
+}
+.dobra:hover { color: var(--texto); }
+.dobra .seta { display: inline-block; font-size: 10px; color: var(--fraco); transition: transform 0.15s; }
+.dobra[aria-expanded="false"] .seta { transform: rotate(-90deg); }
+
+.conta-grupo {
+  padding: 1px 8px;
+  font-family: var(--sans);
+  font-size: 11.5px;
+  font-weight: 400;
+  white-space: nowrap;
+  color: var(--fraco);
+  background: var(--painel);
+  border-radius: 999px;
+  font-variant-numeric: tabular-nums;
+}
+.conta-grupo.cheio { color: var(--verde); background: rgba(90, 209, 154, 0.1); }
+
+/* As acoes do grupo vao para a direita, depois da linha, apagadas mas a vista: totalmente
+   escondidas ninguem descobria que existiam. */
+.grupo-titulo .acoes-grupo {
+  display: flex;
+  order: 4;
+  gap: 2px;
+  opacity: 0.55;
+  transition: opacity 0.15s;
+}
+.grupo-titulo:hover .acoes-grupo, .grupo-titulo:focus-within .acoes-grupo { opacity: 1; }
+.acoes-grupo button {
+  padding: 2px 7px;
+  font-family: var(--sans);
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--fraco);
+  background: none;
+  border: 0;
+  border-radius: 6px;
+  cursor: pointer;
+}
+.acoes-grupo button:hover:not([disabled]) { color: var(--texto); background: var(--painel-alto); }
+.acoes-grupo button[disabled] { opacity: 0.35; cursor: default; }
+
+.grupo-vazio {
+  margin: 0;
+  padding: 14px 16px;
+  font-size: 12.5px;
+  color: var(--fraco);
+  border: 1px dashed var(--linha-forte);
+  border-radius: var(--raio);
+}
+
+.sem-resultado {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 14px;
+  padding: 16px;
+  color: var(--suave);
+  border: 1px dashed var(--linha-forte);
+  border-radius: var(--raio);
+}
+.sem-resultado p { margin: 0; }
+
 /* ---------------- cartao ---------------- */
 
 .cartao {
+  position: relative; /* ancora do trilho de estado e do pavio */
   display: grid;
   grid-template-columns: auto minmax(0, 1fr) auto;
   gap: 14px;
   align-items: center;
-  padding: 12px 14px;
-  background: linear-gradient(180deg, var(--painel-alto), var(--painel));
+  padding: 13px 16px 13px 18px;
+  background: rgba(21, 24, 32, 0.6);
   border: 1px solid var(--linha);
-  border-left: 3px solid var(--linha-forte);
   border-radius: var(--raio);
-  animation: entrar 0.32s ease-out backwards;
+  animation: entrar 0.28s ease-out backwards;
+  transition: border-color 0.15s, background 0.15s;
 }
+.cartao:hover { background: var(--painel); border-color: var(--linha-forte); }
+/* Marcado para a subida: fica um tom acima dos que estao fora da selecao. */
+.cartao.selecionado { background: var(--painel); }
+.cartao.em-foco { border-color: rgba(242, 166, 90, 0.55); }
+
+/* Trilho de estado: a faixa colorida na borda esquerda. Parado nao tem - numa lista de doze
+   projetos, o olho tem que cair primeiro no que esta no ar, subindo ou quebrado. */
+.cartao::before {
+  content: "";
+  position: absolute;
+  left: -1px;
+  top: 12px;
+  bottom: 12px;
+  width: 3px;
+  border-radius: 0 3px 3px 0;
+  background: transparent;
+  transition: background 0.2s;
+}
+.cartao[data-status="pronto"]::before { background: var(--verde); }
+.cartao[data-status="subindo"]::before, .cartao[data-status="esperando"]::before { background: var(--azul); }
+.cartao[data-status="erro"]::before, .cartao[data-status="bloqueado"]::before { background: var(--vermelho); }
+
+/* Pavio: a barra na base do cartao que mostra quanto do timeout ja queimou. A largura vem
+   do relogio da tela, um passo por segundo - a transicao linear emenda um passo no outro. */
+.pavio {
+  position: absolute;
+  left: 12px;
+  bottom: -1px;
+  height: 2px;
+  max-width: calc(100% - 24px);
+  background: var(--azul);
+  border-radius: 2px;
+  transition: width 1s linear, background 0.6s;
+}
+.pavio.acabando { background: var(--ambar); }
 
 @keyframes entrar {
-  from { opacity: 0; transform: translateY(6px); }
+  from { opacity: 0; transform: translateY(5px); }
   to { opacity: 1; transform: none; }
 }
-
-.cartao[data-status="pronto"] { border-left-color: var(--verde); }
-.cartao[data-status="subindo"], .cartao[data-status="esperando"] { border-left-color: var(--azul); }
-.cartao[data-status="erro"], .cartao[data-status="bloqueado"] { border-left-color: var(--vermelho); }
-.cartao.selecionado { background: linear-gradient(180deg, #17211f, #101816); }
-.cartao.em-foco { outline: 1px solid var(--ambar); outline-offset: 2px; }
 
 .marcador { display: grid; place-items: center; cursor: pointer; }
 .marcador input { position: absolute; opacity: 0; width: 0; height: 0; }
 .marcador .caixa {
-  width: 17px;
-  height: 17px;
-  border: 1px solid var(--linha-forte);
-  border-radius: 2px;
-  background: #0a100f;
-  transition: background 0.15s, border-color 0.15s;
+  width: 18px;
+  height: 18px;
+  background: var(--poco) center / 12px no-repeat;
+  border: 1.5px solid rgba(255, 255, 255, 0.2);
+  border-radius: 6px;
+  transition: background-color 0.15s, border-color 0.15s;
 }
+.marcador:hover .caixa { border-color: rgba(255, 255, 255, 0.4); }
 .marcador input:checked + .caixa {
-  background: var(--ambar);
+  background-color: var(--ambar);
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12' fill='none' stroke='%23201305' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M2.5 6.3l2.4 2.4 4.6-5'/%3E%3C/svg%3E");
   border-color: var(--ambar);
-  box-shadow: inset 0 0 0 3px #0f1514;
 }
 .marcador input:focus-visible + .caixa { outline: 2px solid var(--ambar); outline-offset: 2px; }
 
-.linha-titulo { display: flex; align-items: baseline; gap: 9px; flex-wrap: wrap; }
+.linha-titulo { display: flex; align-items: center; gap: 9px; flex-wrap: wrap; }
 
 .led {
+  flex: none;
   width: 8px;
   height: 8px;
   border-radius: 50%;
-  background: #38443f;
-  box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.03);
-  align-self: center;
+  background: #3a4150;
 }
-.led[data-status="pronto"] { background: var(--verde); box-shadow: 0 0 9px var(--verde); }
-.led[data-status="subindo"], .led[data-status="esperando"] { background: var(--azul); animation: piscar 1s ease-in-out infinite; }
-.led[data-status="erro"], .led[data-status="bloqueado"] { background: var(--vermelho); box-shadow: 0 0 9px var(--vermelho); }
+.led[data-status="pronto"] { background: var(--verde); box-shadow: 0 0 0 3px rgba(90, 209, 154, 0.16); }
+.led[data-status="subindo"], .led[data-status="esperando"] { background: var(--azul); animation: piscar 1.1s ease-in-out infinite; }
+.led[data-status="erro"], .led[data-status="bloqueado"] { background: var(--vermelho); box-shadow: 0 0 0 3px rgba(255, 123, 114, 0.16); }
 
-@keyframes piscar { 0%, 100% { opacity: 1; } 50% { opacity: 0.25; } }
+@keyframes piscar { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
 
 .nome {
   margin: 0;
   font-family: var(--display);
-  font-size: 14px;
+  font-size: 15px;
   font-weight: 600;
-  letter-spacing: 0.04em;
+  letter-spacing: -0.005em;
+  line-height: 1.3;
 }
 
 .etiqueta {
-  padding: 1px 6px;
-  font-size: 10px;
-  letter-spacing: 0.06em;
-  color: var(--fraco);
-  border: 1px solid var(--linha);
-  border-radius: 2px;
+  padding: 1px 7px;
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--suave);
+  background: var(--painel-alto);
+  border-radius: 6px;
 }
 
-.estado-texto { font-size: 11px; color: var(--fraco); letter-spacing: 0.04em; }
-.estado-texto.pronto { color: var(--verde); }
-.estado-texto.subindo, .estado-texto.esperando { color: var(--azul); }
-.estado-texto.erro, .estado-texto.bloqueado { color: var(--vermelho); }
+/* Etiqueta de caminho quebrado: config que veio de outra maquina, ou raiz apontando para o
+   lugar errado. Aparece antes de tentar subir, nao depois de falhar. */
+.etiqueta.sem-pasta { font-family: var(--sans); color: var(--vermelho); background: rgba(255, 123, 114, 0.12); }
+
+/* Selo de estado: e o que se le de relance. Parado e so texto apagado; os outros ganham cor. */
+.selo {
+  padding: 1px 9px;
+  font-size: 12px;
+  color: var(--fraco);
+  border-radius: 999px;
+  font-variant-numeric: tabular-nums;
+}
+.selo[data-status="parado"] { padding-left: 0; }
+.selo[data-status="pronto"] { color: var(--verde); background: rgba(90, 209, 154, 0.11); }
+.selo[data-status="subindo"], .selo[data-status="esperando"] { color: var(--azul); background: rgba(108, 180, 255, 0.11); }
+.selo[data-status="erro"], .selo[data-status="bloqueado"] { color: var(--vermelho); background: rgba(255, 123, 114, 0.12); }
+
+.motivo {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin: 5px 0 0;
+  font-size: 12.5px;
+  color: var(--vermelho);
+}
+.motivo span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.motivo button {
+  flex: none;
+  padding: 0;
+  font-size: inherit;
+  color: var(--texto);
+  background: none;
+  border: 0;
+  text-decoration: underline;
+  text-decoration-color: rgba(255, 255, 255, 0.3);
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+.motivo button:hover { color: var(--ambar-vivo); }
 
 .detalhe {
-  margin: 4px 0 0;
-  font-size: 11px;
+  margin: 3px 0 0;
+  font-family: var(--mono);
+  font-size: 11.5px;
   color: var(--fraco);
   white-space: nowrap;
   overflow: hidden;
@@ -310,25 +586,33 @@ main {
 .git {
   display: flex;
   align-items: center;
-  gap: 7px;
-  margin-top: 6px;
-  font-size: 10.5px;
+  gap: 8px;
+  margin-top: 8px;
+  font-size: 12px;
+  color: var(--suave);
   flex-wrap: wrap;
 }
 .git .ramo {
-  padding: 0 6px;
-  font: inherit;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 1px 8px;
+  font-family: var(--mono);
+  font-size: 11.5px;
   color: var(--texto);
-  background: rgba(125, 173, 160, 0.1);
-  border: 1px solid var(--linha-forte);
-  border-radius: 2px;
+  background: var(--painel-alto);
+  border: 1px solid var(--linha);
+  border-radius: 6px;
   cursor: pointer;
+  transition: border-color 0.12s, color 0.12s;
 }
-.git .ramo:hover { color: var(--ambar); border-color: var(--ambar); }
+.git .ramo .ico-ramo { flex: none; width: 12px; height: 12px; color: var(--fraco); }
+.git .ramo:hover { color: var(--ambar-vivo); border-color: rgba(242, 166, 90, 0.5); }
+.git .ramo:hover .ico-ramo { color: inherit; }
 /* Com arquivo mexido o branch nao troca: continua clicavel porque o retrato do cartao pode
    estar atrasado - o modal le o git na hora e explica. */
 .git .ramo.travado { cursor: not-allowed; }
-.git .ramo.travado:hover { color: var(--texto); border-color: var(--linha-forte); }
+.git .ramo.travado:hover { color: var(--texto); border-color: var(--linha); }
 .git .atras { color: var(--vermelho); }
 .git .frente { color: var(--azul); }
 .git .mexido { color: var(--ambar); }
@@ -336,189 +620,244 @@ main {
 .git .mais { color: var(--verde); }
 .git .menos { color: var(--vermelho); }
 .git .em-dia { color: var(--fraco); }
-.git .sem-upstream {
-  padding: 0 5px;
-  color: var(--roxo);
-  border: 1px dashed rgba(183, 155, 255, 0.35);
-  border-radius: 2px;
-}
+.git .sem-upstream { color: var(--fraco); font-style: italic; }
+.git .mais, .git .menos, .git .atras, .git .frente { font-family: var(--mono); font-size: 11.5px; }
 
 .dependencias { display: flex; align-items: center; gap: 7px; margin-top: 7px; flex-wrap: wrap; }
-.rotulo-dep { font-size: 10px; text-transform: uppercase; letter-spacing: 0.14em; color: var(--fraco); }
+.rotulo-dep { font-size: 12px; color: var(--fraco); }
 .chips { display: flex; gap: 5px; flex-wrap: wrap; }
 
 .chip {
-  padding: 1px 7px;
-  font-size: 10.5px;
-  color: var(--roxo);
-  background: rgba(183, 155, 255, 0.09);
-  border: 1px solid rgba(183, 155, 255, 0.28);
-  border-radius: 2px;
+  padding: 1px 8px;
+  font-size: 12px;
+  color: var(--suave);
+  background: var(--painel-alto);
+  border-radius: 6px;
 }
-.chip.vazio { color: var(--fraco); background: none; border-color: var(--linha); }
+.chip.vazio { padding-left: 0; color: var(--fraco); background: none; }
 
 .editor-dep { position: relative; }
 .editor-dep summary {
   list-style: none;
   cursor: pointer;
-  font-size: 10px;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
+  font-size: 12px;
   color: var(--fraco);
-  border-bottom: 1px dashed var(--linha-forte);
+  text-decoration: underline;
+  text-decoration-color: rgba(255, 255, 255, 0.18);
+  text-underline-offset: 3px;
+  border-radius: 4px;
 }
 .editor-dep summary::-webkit-details-marker { display: none; }
-.editor-dep summary:hover { color: var(--ambar); }
-.editor-dep[open] summary { color: var(--ambar); }
+.editor-dep summary:hover, .editor-dep[open] summary { color: var(--ambar-vivo); }
 
-.opcoes-dep {
+/* Menus suspensos (dependencias e "mais acoes") compartilham a mesma caixa. */
+.opcoes-dep, .opcoes-menu {
   position: absolute;
-  z-index: 15;
-  top: 22px;
-  left: 0;
-  min-width: 190px;
-  padding: 8px;
+  z-index: 16;
   display: flex;
   flex-direction: column;
-  gap: 3px;
-  background: #0c1211;
+  gap: 1px;
+  padding: 6px;
+  background: #1f2430;
   border: 1px solid var(--linha-forte);
-  border-radius: var(--raio);
-  box-shadow: 0 14px 30px rgba(0, 0, 0, 0.55);
+  border-radius: 10px;
+  box-shadow: 0 18px 40px rgba(0, 0, 0, 0.5);
 }
+.opcoes-dep { top: 24px; left: 0; min-width: 210px; }
 .opcoes-dep label {
   display: flex;
   align-items: center;
-  gap: 7px;
-  padding: 3px 4px;
-  font-size: 11px;
+  gap: 8px;
+  padding: 5px 7px;
+  font-size: 12.5px;
   cursor: pointer;
-  border-radius: 2px;
+  border-radius: 6px;
 }
-.opcoes-dep label:hover { background: var(--ambar-fraco); }
+.opcoes-dep label:hover { background: rgba(255, 255, 255, 0.06); }
 .opcoes-dep input { accent-color: var(--ambar); }
 
-.controles { display: flex; flex-direction: column; align-items: flex-end; gap: 7px; }
+.controles { display: flex; flex-direction: column; align-items: flex-end; gap: 8px; }
 
-.modo { display: flex; border: 1px solid var(--linha); border-radius: var(--raio); overflow: hidden; }
+/* Modo de execucao: controle segmentado, do tamanho de um detalhe - muda raramente. */
+.modo { display: flex; padding: 2px; background: var(--poco); border-radius: 8px; }
 .modo-opcao {
-  padding: 3px 8px;
-  font-family: var(--mono);
-  font-size: 10px;
+  padding: 2px 9px;
+  font-size: 11.5px;
   color: var(--fraco);
   background: none;
   border: 0;
+  border-radius: 6px;
   cursor: pointer;
 }
-.modo-opcao[aria-pressed="true"] { color: var(--tinta); background: var(--fraco); }
-.modo-opcao:hover:not([aria-pressed="true"]):not([disabled]) { color: var(--texto); background: rgba(255, 255, 255, 0.04); }
+.modo-opcao[aria-pressed="true"] { color: var(--texto); background: var(--painel-alto); }
+.modo-opcao:hover:not([aria-pressed="true"]):not([disabled]) { color: var(--suave); }
 .modo-opcao[disabled] { opacity: 0.4; cursor: not-allowed; }
 .modo.oculto { visibility: hidden; }
 
 .botoes { display: flex; align-items: center; gap: 6px; }
 
-.mini {
-  padding: 4px 9px;
-  font-family: var(--mono);
-  font-size: 11px;
+/* Acao principal do cartao: muda com o estado (subir / cancelar / parar). Largura fixa para
+   a coluna de botoes nao dancar quando o rotulo troca. */
+.mini.acao {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  min-width: 98px;
+  font-weight: 500;
   color: var(--texto);
-  background: #101817;
-  border: 1px solid var(--linha-forte);
-  border-radius: 2px;
+}
+.mini.acao .ico { font-size: 9px; line-height: 1; }
+/* Em repouso so o icone tem cor: uma coluna inteira de botoes ambar gritaria mais que os
+   proprios estados. A cor cheia aparece no hover, que e quando se vai clicar. */
+.mini.acao.subir .ico { color: var(--ambar); }
+.mini.acao.subir:hover { color: #201305; background: var(--ambar); border-color: var(--ambar); }
+.mini.acao.subir:hover .ico { color: inherit; }
+.mini.acao.parar .ico { color: var(--fraco); }
+.mini.acao.cancelar { color: var(--azul); background: rgba(108, 180, 255, 0.11); border-color: transparent; }
+.mini.acao.parar:hover, .mini.acao.cancelar:hover { color: var(--vermelho); background: rgba(255, 123, 114, 0.12); border-color: transparent; }
+.mini.acao.parar:hover .ico { color: inherit; }
+
+.link-url {
+  padding: 0 4px;
+  font-size: 12.5px;
+  color: var(--azul);
+  text-decoration: none;
+  border-radius: 4px;
+}
+.link-url:hover { text-decoration: underline; text-underline-offset: 3px; }
+/* Fora do ar o link continua la (a porta pode estar servida por fora), so nao chama atencao. */
+.link-url.apagado { color: var(--fraco); }
+
+/* ---------------- menu do cartao ---------------- */
+
+.menu-cartao { position: relative; }
+.menu-cartao summary { list-style: none; }
+.menu-cartao summary::-webkit-details-marker { display: none; }
+
+.opcoes-menu { right: 0; top: 32px; min-width: 190px; }
+.opcoes-menu button {
+  padding: 6px 9px;
+  font-size: 12.5px;
+  color: var(--texto);
+  text-align: left;
+  background: none;
+  border: 0;
+  border-radius: 6px;
   cursor: pointer;
 }
-.mini:hover { border-color: var(--ambar); color: var(--ambar); }
-.mini.perigo:hover { border-color: var(--vermelho); color: var(--vermelho); }
+.opcoes-menu button:hover { background: rgba(255, 255, 255, 0.07); }
 
-.link-url { font-size: 11px; color: var(--azul); text-decoration: none; border-bottom: 1px dotted currentColor; }
-.link-url:hover { color: var(--ambar); }
+/* ---------------- arrastar e soltar ---------------- */
+
+.cartao { cursor: grab; }
+.cartao:active { cursor: grabbing; }
+.cartao.arrastando { opacity: 0.35; }
+
+/* Linha de insercao: o cartao entra ACIMA do que estiver marcado. */
+.cartao.alvo-antes { box-shadow: 0 -3px 0 -1px var(--ambar); }
+
+.grupo-titulo.alvo-grupo .nome-grupo, .grupo-vazio.alvo-grupo { color: var(--ambar-vivo); }
+.grupo-vazio.alvo-grupo { border-color: var(--ambar); background: var(--ambar-fraco); }
+
+/* Os controles do cartao nao devem iniciar arraste junto. */
+.controles, .marcador, .editor-dep { cursor: default; }
 
 /* ---------------- lateral ---------------- */
 
-/* topo (67px) + barra de perfis (~40px) + folga */
-.lateral { position: sticky; top: 122px; display: flex; flex-direction: column; gap: 14px; }
+/* A lateral ocupa a altura que sobra da janela e o log fica com tudo que docker e plano nao
+   usarem - e no log que se olha enquanto um projeto sobe. */
+.lateral {
+  --topo-lateral: calc(var(--alt-topo) + var(--alt-barra) + 18px);
+  position: sticky;
+  top: var(--topo-lateral);
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  height: calc(100vh - var(--topo-lateral) - 18px);
+  min-height: 420px;
+}
+.lateral > .painel { display: flex; flex-direction: column; min-height: 0; flex: 0 1 auto; }
+.docker-corpo, .plano { overflow: auto; }
+.painel-docker { max-height: 38%; }
+.painel-plano { max-height: 26%; }
+.lateral > .painel-log { flex: 1 1 0; min-height: 180px; }
+
+@media (max-width: 1080px) {
+  /* Coluna unica: a lateral vira um bloco comum no fim da pagina. */
+  .lateral { position: static; height: auto; min-height: 0; }
+  .painel-docker, .painel-plano { max-height: none; }
+}
 
 .painel {
-  background: linear-gradient(180deg, var(--painel-alto), var(--painel));
+  background: var(--painel);
   border: 1px solid var(--linha);
-  border-radius: var(--raio);
+  border-radius: 14px;
+  overflow: hidden;
 }
 
 .painel-topo {
   display: flex;
-  align-items: baseline;
+  flex: none;
+  align-items: center;
   justify-content: space-between;
-  padding: 10px 13px;
-  border-bottom: 1px solid var(--linha);
+  gap: 12px;
+  padding: 11px 16px;
 }
-.painel-topo h2 {
-  margin: 0;
-  font-family: var(--display);
-  font-size: 12px;
-  font-weight: 600;
-  letter-spacing: 0.18em;
-  text-transform: uppercase;
-}
-.dica { font-size: 10px; color: var(--fraco); letter-spacing: 0.04em; }
+.painel-topo h2 { margin: 0; font-family: var(--display); font-size: 14px; font-weight: 600; color: var(--texto); }
+.painel-topo h2 .dobra { padding: 0; }
+.dica { font-size: 12px; color: var(--fraco); }
+.painel-topo .dica { display: inline-flex; align-items: center; gap: 8px; min-width: 0; text-align: right; }
 
 /* ---------------- painel do docker ---------------- */
 
-.painel-docker.parado { border-color: rgba(255, 98, 87, 0.35); }
-.docker-corpo { padding: 11px 13px; display: flex; flex-direction: column; gap: 9px; }
+.docker-corpo { padding: 2px 16px 14px; display: flex; flex-direction: column; gap: 10px; }
 
-.docker-linha { display: flex; align-items: center; gap: 8px; }
-.docker-msg { flex: 1; font-size: 11.5px; color: var(--fraco); }
+.docker-linha { display: flex; align-items: center; gap: 9px; }
+.docker-msg { flex: 1; font-size: 12.5px; color: var(--suave); }
 
-.containers { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 4px; }
+.containers { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 3px; }
 .containers li {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 4px 7px;
-  font-size: 11px;
-  background: #0b1110;
-  border: 1px solid var(--linha);
-  border-radius: 2px;
+  padding: 5px 9px;
+  font-size: 12.5px;
+  background: var(--poco);
+  border: 1px solid transparent;
+  border-radius: 8px;
 }
 .containers b { font-weight: 500; color: var(--texto); }
 .containers .dica {
   margin-left: auto;
+  font-size: 11.5px;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
   max-width: 45%;
 }
-.containers .portas {
-  padding: 0 5px;
-  font-size: 10px;
-  color: var(--azul);
-  border: 1px solid rgba(99, 205, 255, 0.28);
-  border-radius: 2px;
-}
+.containers .portas { font-family: var(--mono); font-size: 11px; color: var(--azul); }
 
-.containers li.de-fora { border-style: dashed; opacity: 0.85; }
+.containers li.de-fora { background: none; border: 1px dashed var(--linha); }
+.containers li.ativo { border-color: rgba(242, 166, 90, 0.55); }
 
 /* Politica de reinicio: discreta, mas sempre visivel - e ela que explica container
    voltando sozinho quando o Docker Desktop abre. */
 .containers .politica {
   padding: 0 2px;
-  font-family: var(--mono);
-  font-size: 9.5px;
+  font-size: 11px;
   color: var(--fraco);
   background: none;
-  border: 1px solid var(--linha);
-  border-radius: 2px;
+  border: 0;
+  border-radius: 4px;
   cursor: pointer;
 }
-.containers .politica:hover { color: var(--ambar); border-color: var(--ambar); }
-.containers .politica option { background: #0c1211; color: var(--texto); }
-.containers li.ativo { border-color: var(--ambar); }
+.containers .politica:hover { color: var(--texto); }
+.containers .politica option { background: #1f2430; color: var(--texto); }
 
 .separador-containers {
-  padding: 2px 0 0 !important;
-  font-size: 9.5px;
-  letter-spacing: 0.16em;
-  text-transform: uppercase;
+  padding: 6px 2px 0 !important;
+  font-size: 11.5px !important;
   color: var(--fraco);
   background: none !important;
   border: 0 !important;
@@ -534,58 +873,63 @@ main {
 }
 .containers li:hover .acoes-container,
 .containers li:focus-within .acoes-container { opacity: 1; }
-.acoes-container .mini { padding: 1px 6px; font-size: 10.5px; line-height: 1.4; }
+.acoes-container .mini { padding: 1px 7px; font-size: 11.5px; }
 
-.painel-log .painel-topo .mini { padding: 0 5px; margin-left: 5px; font-size: 10px; }
+/* ---------------- plano de subida ---------------- */
 
-.plano { padding: 12px 13px; display: flex; flex-direction: column; gap: 10px; }
+.plano { padding: 2px 16px 14px; display: flex; flex-direction: column; gap: 8px; }
 
-.onda { display: grid; grid-template-columns: 54px minmax(0, 1fr); gap: 10px; align-items: start; }
-.onda-num {
-  font-family: var(--display);
-  font-size: 10px;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-  color: var(--fraco);
-  padding-top: 3px;
-  border-right: 1px solid var(--linha);
-}
+.onda { display: grid; grid-template-columns: 26px minmax(0, 1fr); gap: 8px; align-items: start; }
+.onda-num { padding-top: 3px; font-size: 11.5px; color: var(--fraco); font-variant-numeric: tabular-nums; }
 .onda-itens { display: flex; flex-wrap: wrap; gap: 5px; }
 .onda-item {
-  padding: 2px 8px;
-  font-size: 11px;
-  background: #0c1211;
-  border: 1px solid var(--linha-forte);
-  border-radius: 2px;
+  padding: 2px 9px;
+  font-size: 12px;
+  color: var(--suave);
+  background: var(--painel-alto);
+  border-radius: 6px;
 }
-.onda-item[data-status="pronto"] { color: var(--verde); border-color: rgba(73, 221, 139, 0.4); }
-.onda-item[data-status="subindo"], .onda-item[data-status="esperando"] { color: var(--azul); border-color: rgba(99, 205, 255, 0.4); }
-.onda-item[data-status="erro"], .onda-item[data-status="bloqueado"] { color: var(--vermelho); border-color: rgba(255, 98, 87, 0.4); }
+.onda-item[data-status="pronto"] { color: var(--verde); background: rgba(90, 209, 154, 0.11); }
+.onda-item[data-status="subindo"], .onda-item[data-status="esperando"] { color: var(--azul); background: rgba(108, 180, 255, 0.11); }
+.onda-item[data-status="erro"], .onda-item[data-status="bloqueado"] { color: var(--vermelho); background: rgba(255, 123, 114, 0.12); }
 
-.plano-vazio { color: var(--fraco); font-size: 11.5px; }
+.plano-vazio { margin: 0; color: var(--fraco); font-size: 12.5px; }
 
-.painel-log { flex: 1; min-height: 0; }
+/* ---------------- log ---------------- */
+
+.painel-log .painel-topo .mini { padding: 1px 8px; font-size: 11.5px; }
+
 .log {
+  flex: 1;
+  min-height: 0;
   margin: 0;
-  padding: 11px 13px;
-  height: clamp(220px, 42vh, 460px);
+  padding: 12px 16px;
   overflow: auto;
-  font-size: 11.5px;
-  line-height: 1.55;
+  font-family: var(--mono);
+  font-size: 12px;
+  line-height: 1.6;
   white-space: pre-wrap;
   word-break: break-word;
-  color: #b9c8c3;
+  color: #b7bfcc;
+  background: var(--poco);
+  border-top: 1px solid var(--linha);
 }
-.log:empty::after { content: "sem log ainda."; color: var(--fraco); }
+.log:empty::after { content: "sem log ainda."; font-family: var(--sans); color: var(--fraco); }
 .log .eco { color: var(--ambar); }
+.log .ruim { color: var(--vermelho); }
+.log .atencao { color: #f3cf8e; }
+
+@media (max-width: 1080px) {
+  .log { flex: none; height: clamp(220px, 42vh, 460px); }
+}
 
 /* ---------------- avisos ---------------- */
 
 /* Acima do modal (50): aviso de erro escondido atras do fundo escuro parece botao morto. */
 .avisos {
   position: fixed;
-  right: 18px;
-  bottom: 18px;
+  right: 20px;
+  bottom: 20px;
   z-index: 55;
   display: flex;
   flex-direction: column;
@@ -594,178 +938,40 @@ main {
 }
 
 .aviso {
-  padding: 10px 13px;
-  font-size: 11.5px;
-  background: #131c1a;
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 11px 12px 11px 16px;
+  font-size: 13px;
+  background: #1f2430;
   border: 1px solid var(--linha-forte);
-  border-left: 3px solid var(--ambar);
-  border-radius: var(--raio);
-  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.5);
+  border-radius: 12px;
+  box-shadow: inset 3px 0 0 var(--ambar), 0 16px 36px rgba(0, 0, 0, 0.45);
   animation: entrar 0.2s ease-out;
 }
-.aviso.erro { border-left-color: var(--vermelho); }
-.aviso.ok { border-left-color: var(--verde); }
-
-/* ---------------- barra de perfis ---------------- */
-
-.barra-perfis {
-  position: sticky;
-  top: 67px;
-  z-index: 18;
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 8px 22px;
-  background: rgba(8, 11, 10, 0.82);
-  backdrop-filter: blur(8px);
-  border-bottom: 1px solid var(--linha);
-}
-
-.rotulo-barra {
-  font-family: var(--display);
-  font-size: 10px;
-  letter-spacing: 0.22em;
-  text-transform: uppercase;
-  color: var(--fraco);
-}
-
-.perfis { display: flex; gap: 6px; flex-wrap: wrap; flex: 1; }
-
-.perfil {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 3px 4px 3px 10px;
-  font-size: 11.5px;
-  color: var(--texto);
-  background: #101817;
-  border: 1px solid var(--linha-forte);
-  border-radius: 999px;
-  cursor: pointer;
-}
-.perfil:hover { border-color: var(--ambar); }
-.perfil.ativo {
-  color: #17110a;
-  background: var(--ambar);
-  border-color: var(--ambar);
-}
-.perfil .aplicar {
+.aviso.erro { box-shadow: inset 3px 0 0 var(--vermelho), 0 16px 36px rgba(0, 0, 0, 0.45); }
+.aviso.ok { box-shadow: inset 3px 0 0 var(--verde), 0 16px 36px rgba(0, 0, 0, 0.45); }
+.aviso span { flex: 1; }
+.aviso button {
+  flex: none;
+  width: 20px;
+  height: 20px;
   padding: 0;
-  font-family: inherit;
-  font-size: inherit;
-  color: inherit;
-  background: none;
-  border: 0;
-  cursor: pointer;
-}
-.perfil .qtd { font-size: 10px; opacity: 0.7; }
-.perfil .editar-perfil {
-  padding: 0 5px;
-  font-family: var(--mono);
-  font-size: 11px;
-  line-height: 1.4;
-  color: inherit;
-  background: rgba(0, 0, 0, 0.18);
-  border: 0;
-  border-radius: 999px;
-  cursor: pointer;
-  opacity: 0.65;
-}
-.perfil .editar-perfil:hover { opacity: 1; }
-.perfis:empty::after { content: "nenhum perfil salvo ainda"; font-size: 11px; color: var(--fraco); }
-
-.acoes-barra { display: flex; gap: 6px; }
-.mini.destaque { color: var(--ambar); border-color: rgba(255, 176, 32, 0.45); }
-
-/* ---------------- cabecalho de grupo ---------------- */
-
-.grupo-titulo .acoes-grupo {
-  display: flex;
-  gap: 4px;
-  opacity: 0;
-  transition: opacity 0.15s;
-}
-.grupo-titulo:hover .acoes-grupo, .grupo-titulo:focus-within .acoes-grupo { opacity: 1; }
-.acoes-grupo button {
-  padding: 1px 6px;
-  font-family: var(--mono);
-  font-size: 10px;
+  font-size: 15px;
+  line-height: 1;
   color: var(--fraco);
   background: none;
-  border: 1px solid var(--linha);
-  border-radius: 2px;
-  cursor: pointer;
-}
-.acoes-grupo button:hover { color: var(--ambar); border-color: var(--ambar); }
-.grupo-vazio {
-  padding: 10px 14px;
-  font-size: 11.5px;
-  color: var(--fraco);
-  border: 1px dashed var(--linha);
-  border-radius: var(--raio);
-}
-
-.conta-grupo {
-  padding: 0 6px;
-  font-size: 10px;
-  color: var(--fraco);
-  border: 1px solid var(--linha);
-  border-radius: 999px;
-}
-
-/* ---------------- arrastar e soltar ---------------- */
-
-.cartao { cursor: grab; }
-.cartao:active { cursor: grabbing; }
-.cartao.arrastando { opacity: 0.35; }
-
-/* Linha de insercao: o cartao entra ACIMA do que estiver marcado. */
-.cartao.alvo-antes { box-shadow: 0 -3px 0 -1px var(--ambar); }
-
-.grupo-titulo.alvo-grupo span:first-child, .grupo-vazio.alvo-grupo { color: var(--ambar); }
-.grupo-vazio.alvo-grupo { border-color: var(--ambar); background: var(--ambar-fraco); }
-
-/* Os controles do cartao nao devem iniciar arraste junto. */
-.controles, .marcador, .editor-dep { cursor: default; }
-
-/* ---------------- menu do cartao ---------------- */
-
-.menu-cartao { position: relative; }
-.menu-cartao summary { list-style: none; }
-.menu-cartao summary::-webkit-details-marker { display: none; }
-
-.opcoes-menu {
-  position: absolute;
-  z-index: 16;
-  right: 0;
-  top: 26px;
-  display: flex;
-  flex-direction: column;
-  min-width: 160px;
-  padding: 5px;
-  background: #0c1211;
-  border: 1px solid var(--linha-forte);
-  border-radius: var(--raio);
-  box-shadow: 0 14px 30px rgba(0, 0, 0, 0.55);
-}
-.opcoes-menu button {
-  padding: 5px 8px;
-  font-family: var(--mono);
-  font-size: 11.5px;
-  color: var(--texto);
-  text-align: left;
-  background: none;
   border: 0;
-  border-radius: 2px;
+  border-radius: 6px;
   cursor: pointer;
 }
-.opcoes-menu button:hover { color: var(--ambar); background: var(--ambar-fraco); }
+.aviso button:hover { color: var(--texto); background: rgba(255, 255, 255, 0.08); }
 
 /* ---------------- modal ---------------- */
 
 .modal { position: fixed; inset: 0; z-index: 50; display: grid; place-items: center; }
 .modal[hidden] { display: none; }
-.modal-fundo { position: absolute; inset: 0; background: rgba(4, 6, 6, 0.72); backdrop-filter: blur(2px); }
+.modal-fundo { position: absolute; inset: 0; background: rgba(6, 7, 10, 0.66); backdrop-filter: blur(4px); }
 
 .modal-caixa {
   position: relative;
@@ -773,10 +979,11 @@ main {
   max-height: calc(100vh - 60px);
   display: flex;
   flex-direction: column;
-  background: linear-gradient(180deg, #16201e, #0f1514);
+  background: #181c24;
   border: 1px solid var(--linha-forte);
-  border-radius: var(--raio);
-  box-shadow: 0 30px 70px rgba(0, 0, 0, 0.65);
+  border-radius: 18px;
+  box-shadow: 0 40px 90px rgba(0, 0, 0, 0.6);
+  overflow: hidden;
   animation: entrar 0.18s ease-out;
 }
 
@@ -785,24 +992,18 @@ main {
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  padding: 13px 16px;
-  border-bottom: 1px solid var(--linha);
+  padding: 16px 20px 12px;
 }
-.modal-topo h2 {
-  margin: 0;
-  font-family: var(--display);
-  font-size: 13px;
-  font-weight: 600;
-  letter-spacing: 0.16em;
-  text-transform: uppercase;
-}
+.modal-topo h2 { margin: 0; font-family: var(--display); font-size: 17px; font-weight: 650; letter-spacing: -0.01em; }
+.modal-topo .mini { font-family: var(--mono); font-size: 11px; }
 
-.modal-corpo { padding: 16px; overflow: auto; }
+.modal-corpo { padding: 6px 20px 18px; overflow: auto; }
 .modal-acoes {
   display: flex;
   justify-content: flex-end;
   gap: 8px;
-  padding: 12px 16px;
+  padding: 14px 20px;
+  background: rgba(0, 0, 0, 0.16);
   border-top: 1px solid var(--linha);
 }
 .modal-acoes .esquerda { margin-right: auto; }
@@ -810,173 +1011,178 @@ main {
 /* Erro do modal: fica colado no rodape, a vista mesmo com o corpo rolado. */
 .erro-modal {
   margin: 0;
-  padding: 9px 16px;
-  font-size: 11.5px;
+  padding: 10px 20px;
+  font-size: 12.5px;
   color: var(--vermelho);
-  background: rgba(255, 98, 87, 0.08);
-  border-top: 1px solid rgba(255, 98, 87, 0.35);
+  background: rgba(255, 123, 114, 0.09);
+  border-top: 1px solid rgba(255, 123, 114, 0.3);
 }
-.nota-modal { margin: 10px 0 0; font-size: 10.5px; color: var(--fraco); }
-.botao.perigo { color: var(--vermelho); border-color: rgba(255, 98, 87, 0.45); }
-.botao.perigo:hover { color: #fff; background: rgba(255, 98, 87, 0.2); border-color: var(--vermelho); }
-.botao.primario.perigo { color: #170a0a; background: var(--vermelho); border-color: var(--vermelho); }
-.botao.primario.perigo:hover { background: #ff7a70; border-color: #ff7a70; }
+.nota-modal { margin: 10px 0 0; font-size: 12px; color: var(--fraco); }
+/* Textos soltos dos modais simples (confirmar, perfil). */
+.modal-corpo > .ajuda { margin: 6px 0 0; color: var(--suave); }
+
+.botao.perigo { color: var(--vermelho); background: none; border-color: rgba(255, 123, 114, 0.4); }
+.botao.perigo:hover { color: #fff; background: rgba(255, 123, 114, 0.18); border-color: var(--vermelho); }
+.botao.primario.perigo { color: #2a0906; background: var(--vermelho); border-color: var(--vermelho); }
+.botao.primario.perigo:hover { background: #ff958d; border-color: #ff958d; }
 
 /* ---------------- formulario ---------------- */
 
-.campos { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px 14px; }
-.campo { display: flex; flex-direction: column; gap: 5px; }
+.campos { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px 16px; }
+.campo { display: flex; flex-direction: column; gap: 6px; }
 .campo.largo { grid-column: 1 / -1; }
 /* display:flex vence o hidden do navegador - o formulario esconde os campos do tipo que
    nao esta selecionado justamente por aqui. */
 .campo[hidden] { display: none; }
 
-.campo label, .campo .rotulo-campo {
-  font-size: 10px;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-  color: var(--fraco);
-}
+.campo label, .campo .rotulo-campo { font-size: 12.5px; font-weight: 500; color: var(--suave); }
 
+/* Campo de formulario em mono: quase tudo que se digita aqui e caminho, comando ou porta. */
 .campo input[type="text"], .campo input[type="number"], .campo select, .campo textarea {
-  padding: 7px 9px;
+  padding: 8px 11px;
   font-family: var(--mono);
-  font-size: 12px;
+  font-size: 12.5px;
   color: var(--texto);
-  background: #0b1110;
+  background: var(--poco);
   border: 1px solid var(--linha-forte);
-  border-radius: 2px;
+  border-radius: var(--raio-p);
+  transition: border-color 0.15s, box-shadow 0.15s;
 }
+.campo select { font-family: var(--sans); font-size: 13px; }
+.campo select option { background: #1f2430; color: var(--texto); }
+.campo input::placeholder { color: #4d5462; }
 .campo input[disabled], .campo select[disabled] { opacity: 0.45; cursor: not-allowed; }
 .campo input:focus, .campo select:focus, .campo textarea:focus {
   outline: none;
   border-color: var(--ambar);
-  box-shadow: 0 0 0 2px var(--ambar-fraco);
+  box-shadow: 0 0 0 3px var(--ambar-fraco);
 }
 .campo textarea { resize: vertical; min-height: 58px; }
-.campo .ajuda { font-size: 10.5px; color: var(--fraco); }
-.campo .erro-campo { font-size: 10.5px; color: var(--vermelho); }
+.campo .ajuda { font-size: 12px; color: var(--fraco); }
+.campo .erro-campo { font-size: 12px; color: var(--vermelho); }
 
 .linha-campo { display: flex; gap: 6px; }
 .linha-campo input { flex: 1; }
+.linha-campo .mini { padding-inline: 14px; }
 
-.opcao-livre { display: flex; align-items: center; gap: 7px; font-size: 11px; color: var(--fraco); }
+.opcao-livre { display: flex; align-items: center; gap: 8px; font-size: 12.5px; font-weight: 400; color: var(--fraco); }
 .opcao-livre input { accent-color: var(--ambar); }
 
-.seletor-tipo { display: flex; gap: 6px; }
+.seletor-tipo { display: flex; gap: 4px; padding: 3px; background: var(--poco); border-radius: 10px; }
 .seletor-tipo button {
   flex: 1;
   padding: 7px;
-  font-family: var(--mono);
-  font-size: 11.5px;
+  font-size: 13px;
   color: var(--fraco);
-  background: #0b1110;
-  border: 1px solid var(--linha-forte);
-  border-radius: 2px;
+  background: none;
+  border: 0;
+  border-radius: 7px;
   cursor: pointer;
 }
-.seletor-tipo button[aria-pressed="true"] { color: var(--ambar); border-color: var(--ambar); background: var(--ambar-fraco); }
+.seletor-tipo button:hover { color: var(--suave); }
+.seletor-tipo button[aria-pressed="true"] { color: var(--texto); background: var(--painel-alto); box-shadow: 0 1px 0 rgba(255, 255, 255, 0.06) inset; }
 
 .lista-dep {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
-  gap: 3px;
+  grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
+  gap: 2px;
   max-height: 150px;
   overflow: auto;
   padding: 8px;
-  background: #0b1110;
+  background: var(--poco);
   border: 1px solid var(--linha-forte);
-  border-radius: 2px;
+  border-radius: var(--raio-p);
 }
-.lista-dep label { display: flex; align-items: center; gap: 6px; font-size: 11.5px; color: var(--texto); text-transform: none; letter-spacing: 0; }
+.lista-dep label { display: flex; align-items: center; gap: 8px; padding: 3px 4px; font-size: 12.5px; font-weight: 400; color: var(--texto); border-radius: 5px; cursor: pointer; }
+.lista-dep label:hover { background: rgba(255, 255, 255, 0.05); }
 .lista-dep input { accent-color: var(--ambar); }
 
 .sugestoes { display: flex; flex-wrap: wrap; gap: 5px; }
 .sugestao {
-  padding: 2px 8px;
-  font-size: 11px;
+  padding: 3px 10px;
+  font-family: var(--mono);
+  font-size: 11.5px;
   color: var(--azul);
-  background: rgba(99, 205, 255, 0.08);
-  border: 1px solid rgba(99, 205, 255, 0.3);
-  border-radius: 2px;
+  background: rgba(108, 180, 255, 0.1);
+  border: 0;
+  border-radius: 6px;
   cursor: pointer;
 }
-.sugestao:hover { color: var(--ambar); border-color: var(--ambar); background: var(--ambar-fraco); }
+.sugestao:hover { color: #06121f; background: var(--azul); }
 
-/* ---------------- navegador de pastas ---------------- */
+/* ---------------- navegador de pastas e lista de branches ---------------- */
 
 .trilha {
   display: flex;
-  align-items: center;
-  gap: 6px;
+  align-items: baseline;
+  gap: 7px;
   margin-bottom: 10px;
-  padding: 7px 9px;
-  font-size: 11.5px;
+  font-size: 12.5px;
   color: var(--fraco);
-  background: #0b1110;
-  border: 1px solid var(--linha);
-  border-radius: 2px;
   word-break: break-all;
 }
-.trilha b { color: var(--texto); font-weight: 500; }
+.trilha b { font-family: var(--mono); font-size: 12px; color: var(--texto); font-weight: 500; }
 
 .lista-pastas, .lista-branches {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 1px;
   max-height: 46vh;
   overflow: auto;
   padding: 6px;
-  background: #0b1110;
+  background: var(--poco);
   border: 1px solid var(--linha-forte);
-  border-radius: 2px;
+  border-radius: 10px;
 }
 
 .item-pasta {
   display: flex;
   align-items: center;
   gap: 9px;
-  padding: 6px 9px;
-  font-size: 12px;
+  padding: 7px 10px;
+  font-size: 13px;
   color: var(--texto);
   background: none;
-  border: 1px solid transparent;
-  border-radius: 2px;
+  border: 0;
+  border-radius: 7px;
   cursor: pointer;
   text-align: left;
 }
-.item-pasta:hover { background: var(--ambar-fraco); border-color: rgba(255, 176, 32, 0.25); }
+.item-pasta:hover { background: rgba(255, 255, 255, 0.06); }
 .item-pasta .nome-pasta { flex: 1; }
 .item-pasta .marcas { display: flex; gap: 4px; }
 .item-pasta .marca {
-  padding: 0 5px;
-  font-size: 9.5px;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--roxo);
-  border: 1px solid rgba(183, 155, 255, 0.3);
-  border-radius: 2px;
+  padding: 1px 7px;
+  font-size: 11px;
+  color: var(--suave);
+  background: var(--painel-alto);
+  border-radius: 5px;
 }
 .item-pasta.acima { color: var(--fraco); }
-
-/* ---------------- troca de branch ---------------- */
+.lista-pastas:empty::after { content: "nenhuma subpasta aqui."; padding: 8px; font-size: 12.5px; color: var(--fraco); }
 
 .filtro-branch { margin-bottom: 8px; }
-.nota-lista { padding: 8px; font-size: 11.5px; color: var(--fraco); }
-.item-pasta[disabled] { cursor: default; opacity: 0.55; }
-.item-pasta[disabled]:hover { background: none; border-color: transparent; }
-.item-pasta.atual { opacity: 1; color: var(--ambar); }
-.lista-pastas:empty::after { content: "nenhuma subpasta aqui."; padding: 8px; font-size: 11.5px; color: var(--fraco); }
+.lista-branches .nome-pasta { font-family: var(--mono); font-size: 12.5px; }
+.nota-lista { padding: 8px; font-size: 12.5px; color: var(--fraco); }
+.item-pasta[disabled] { cursor: default; opacity: 0.5; }
+.item-pasta[disabled]:hover { background: none; }
+.item-pasta.atual { opacity: 1; color: var(--ambar-vivo); }
+.item-pasta.atual .marca { color: var(--ambar-vivo); background: var(--ambar-fraco); }
 
-::-webkit-scrollbar { width: 9px; height: 9px; }
-::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb { background: #223230; border-radius: 4px; }
-::-webkit-scrollbar-thumb:hover { background: #2e423f; }
+/* ---------------- telas estreitas ---------------- */
 
-/* Etiqueta de caminho quebrado: config que veio de outra maquina, ou raiz apontando para o
-   lugar errado. Aparece antes de tentar subir, nao depois de falhar. */
-.etiqueta.sem-pasta {
-  color: var(--vermelho);
-  border-color: rgba(255, 98, 87, 0.45);
-  background: rgba(255, 98, 87, 0.08);
+@media (max-width: 1280px) {
+  /* Antes de o topo estourar, somem os rotulos que os numeros ja explicam. */
+  .medidor span { display: none; }
+  .titulo p { display: none; }
 }
+
+/* Quem pediu menos movimento no sistema nao ganha pulso, pisca-pisca nem entrada animada. */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation: none !important; transition: none !important; }
+}
+
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: #2a303c; border: 2px solid transparent; background-clip: padding-box; border-radius: 6px; }
+::-webkit-scrollbar-thumb:hover { background-color: #3a4252; }

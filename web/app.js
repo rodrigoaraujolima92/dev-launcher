@@ -13,6 +13,26 @@ const ROTULO_STATUS = {
   bloqueado: "bloqueado",
 };
 
+// Familias de status: e por elas que os contadores do topo contam e filtram.
+const FAMILIA_STATUS = {
+  parado: "parado",
+  esperando: "andando",
+  subindo: "andando",
+  pronto: "pronto",
+  erro: "falha",
+  bloqueado: "falha",
+};
+
+// Grupo e painel recolhido e preferencia de quem olha a tela, nao do config: fica no navegador.
+const CHAVE_RECOLHIDOS = "dev-launcher.recolhidos";
+function lerRecolhidos() {
+  try {
+    return JSON.parse(localStorage.getItem(CHAVE_RECOLHIDOS)) || {};
+  } catch {
+    return {};
+  }
+}
+
 const FORM_VAZIO = () => ({
   id: "", nome: "", grupo: "", tipo: "app",
   dir: "", cmd: "", modo: "gerenciado", caminho_livre: false,
@@ -46,6 +66,10 @@ createApp({
       git: {},
       buscandoGit: false,
       faltando: [],
+      filtro: "",
+      filtroStatus: "", // "" | pronto | andando | falha
+      recolhidos: lerRecolhidos(),
+      agora: Date.now(), // relogio dos cartoes que estao subindo
     };
   },
 
@@ -54,17 +78,23 @@ createApp({
       return this.config.servicos.filter((s) => s.selecionado).map((s) => s.id);
     },
     contagem() {
-      const c = { pronto: 0, andando: 0, falha: 0 };
-      for (const s of this.config.servicos) {
-        const status = this.estado(s.id).status;
-        if (status === "pronto") c.pronto++;
-        else if (status === "subindo" || status === "esperando") c.andando++;
-        else if (status === "erro" || status === "bloqueado") c.falha++;
-      }
+      const c = { pronto: 0, andando: 0, falha: 0, parado: 0 };
+      for (const s of this.config.servicos) c[this.familia(this.estado(s.id).status)]++;
       return c;
     },
     subindo() {
       return this.contagem.andando > 0;
+    },
+    filtrando() {
+      return !!(this.filtro.trim() || this.filtroStatus);
+    },
+    // Com filtro ligado, grupo sem nenhum cartao que bata some da tela.
+    gruposVisiveis() {
+      if (!this.filtrando) return this.config.grupos;
+      return this.config.grupos.filter((g) => this.servicosDe(g.id).length);
+    },
+    nenhumVisivel() {
+      return this.filtrando && !this.config.servicos.some(this.passaNoFiltro);
     },
     topo() {
       return this.modais[this.modais.length - 1] || {};
@@ -119,8 +149,20 @@ createApp({
     this.atualizarGit(false);
     this.conectarEventos();
     document.addEventListener("keydown", (ev) => {
-      if (ev.key === "Escape" && this.modais.length) this.fecharTopo();
+      if (ev.key === "Escape" && this.modais.length) return this.fecharTopo();
+      // "/" pula para o filtro, como em qualquer lista grande - menos quando ja se esta
+      // digitando em algum campo.
+      const digitando = /^(INPUT|TEXTAREA|SELECT)$/.test(ev.target.tagName);
+      if (ev.key === "/" && !digitando && !this.modais.length) {
+        ev.preventDefault();
+        this.$refs.busca?.focus();
+      }
     });
+    // O relogio so anda enquanto ha algo subindo: e ele que move o tempo e o pavio dos
+    // cartoes, e parado nao custa nenhum redesenho.
+    setInterval(() => {
+      if (this.subindo) this.agora = Date.now();
+    }, 1000);
   },
 
   methods: {
@@ -151,9 +193,35 @@ createApp({
     estado(id) {
       return this.estados[id] || { status: "parado", mensagem: "" };
     },
+    familia(status) {
+      return FAMILIA_STATUS[status] || "parado";
+    },
+    // textoEstado e o selo do cartao. O motivo de erro/bloqueio nao entra aqui: vai na linha
+    // propria, que tem espaco para a frase inteira.
     textoEstado(id) {
       const e = this.estado(id);
-      return e.mensagem ? `${ROTULO_STATUS[e.status]} · ${e.mensagem}` : ROTULO_STATUS[e.status];
+      const rotulo = ROTULO_STATUS[e.status] || e.status;
+      if (e.status === "subindo") return `${rotulo} · ${this.decorrido(id)}`;
+      if (e.status === "esperando") return e.mensagem && e.mensagem !== "na fila" ? e.mensagem : rotulo;
+      if (this.familia(e.status) === "falha") return rotulo;
+      return e.mensagem ? `${rotulo} · ${e.mensagem}` : rotulo;
+    },
+    motivo(id) {
+      const e = this.estado(id);
+      return this.familia(e.status) === "falha" ? e.mensagem || "" : "";
+    },
+    decorrido(id) {
+      const desde = Date.parse(this.estado(id).desde);
+      if (!desde) return "";
+      const seg = Math.max(0, Math.round((this.agora - desde) / 1000));
+      return seg < 60 ? `${seg}s` : `${Math.floor(seg / 60)}m${String(seg % 60).padStart(2, "0")}s`;
+    },
+    // progresso diz quanto do timeout ja foi gasto (0 a 1) - e a largura do pavio do cartao.
+    progresso(s) {
+      const desde = Date.parse(this.estado(s.id).desde);
+      if (!desde) return 0;
+      const limite = (s.timeout || 120) * 1000;
+      return Math.min(1, Math.max(0, (this.agora - desde) / limite));
     },
     nomeDe(id) {
       return this.config.servicos.find((s) => s.id === id)?.nome || id;
@@ -161,8 +229,50 @@ createApp({
     servicoDe(id) {
       return this.config.servicos.find((s) => s.id === id);
     },
+    passaNoFiltro(s) {
+      const texto = this.filtro.trim().toLowerCase();
+      if (texto && !`${s.nome} ${s.dir || ""} ${s.porta || ""}`.toLowerCase().includes(texto)) return false;
+      if (this.filtroStatus && this.familia(this.estado(s.id).status) !== this.filtroStatus) return false;
+      return true;
+    },
+    // servicosDe e o que aparece na tela (respeita o filtro); todosDe e o grupo inteiro.
     servicosDe(grupo) {
+      return this.config.servicos.filter((s) => s.grupo === grupo && this.passaNoFiltro(s));
+    },
+    todosDe(grupo) {
       return this.config.servicos.filter((s) => s.grupo === grupo);
+    },
+    noArDe(grupo) {
+      return this.todosDe(grupo).filter((s) => this.estado(s.id).status === "pronto").length;
+    },
+    posicaoGrupo(id) {
+      return this.config.grupos.findIndex((g) => g.id === id);
+    },
+
+    // ------------------------------------------------------------------
+    // filtro e grupos recolhidos
+    // ------------------------------------------------------------------
+    filtrarStatus(familia) {
+      this.filtroStatus = this.filtroStatus === familia ? "" : familia;
+    },
+    limparFiltro() {
+      this.filtro = "";
+      this.filtroStatus = "";
+    },
+    recolhido(chave) {
+      return !!this.recolhidos[chave];
+    },
+    // Filtrando, todo grupo abre: nao adianta achar o projeto e ele ficar escondido.
+    grupoAberto(id) {
+      return this.filtrando || !this.recolhido("grupo:" + id);
+    },
+    alternarRecolhido(chave) {
+      this.recolhidos = { ...this.recolhidos, [chave]: !this.recolhidos[chave] };
+      try {
+        localStorage.setItem(CHAVE_RECOLHIDOS, JSON.stringify(this.recolhidos));
+      } catch {
+        // navegador sem armazenamento: so nao lembra na proxima vez
+      }
     },
     idsDoGrupo(grupo) {
       return this.servicosDe(grupo).map((s) => s.id);
@@ -180,13 +290,31 @@ createApp({
         const plano = await this.enviar("/api/subir", { ids });
         const extras = plano.ids.filter((x) => !ids.includes(x));
         const verbo = extras.length === 1 ? "entrou" : "entraram";
-        this.avisar(extras.length
-          ? `subindo ${plano.ids.length} projetos (${extras.map(this.nomeDe).join(", ")} ${verbo} como dependencia).`
-          : `subindo ${plano.ids.length} projeto(s).`, "ok");
+        // Um projeto so, sem dependencia: o cartao ja mostra que esta subindo, dispensa aviso.
+        if (extras.length) {
+          this.avisar(`subindo ${plano.ids.length} projetos (${extras.map(this.nomeDe).join(", ")} ${verbo} como dependencia).`, "ok");
+        } else if (plano.ids.length > 1) {
+          this.avisar(`subindo ${plano.ids.length} projetos.`, "ok");
+        }
         this.plano = plano;
       } catch (err) {
         this.avisar(err.message, "erro");
       }
+    },
+
+    // subirUm e o botao do cartao: quem sobe um projeto quer ver o log dele.
+    subirUm(s) {
+      this.mostrarLog(s.id);
+      this.subir([s.id]);
+    },
+
+    // resumirSubida conta como terminou a subida que o servidor acabou de encerrar.
+    resumirSubida(ids) {
+      const noAr = ids.filter((id) => this.estado(id).status === "pronto");
+      const falhas = ids.filter((id) => this.familia(this.estado(id).status) === "falha");
+      if (falhas.length) this.avisar(`nao subiu: ${falhas.map(this.nomeDe).join(", ")}.`, "erro");
+      if (!noAr.length) return;
+      this.avisar(noAr.length === 1 ? `${this.nomeDe(noAr[0])} no ar.` : `${noAr.length} projetos no ar.`, "ok");
     },
 
     async parar(ids) {
@@ -826,6 +954,11 @@ createApp({
       const modal = this.modais.pop();
       if (modal && !concluido && modal.resolver) modal.resolver(null);
     },
+    // Clique fora fecha os modais leves. O formulario de projeto nao: um clique torto jogaria
+    // fora tudo que foi digitado.
+    fecharPeloFundo() {
+      if (this.topo.tipo !== "servico") this.fecharTopo();
+    },
     pedirTexto(titulo, rotulo, valor) {
       return new Promise((resolver) => {
         this.abrir({ tipo: "texto", titulo, rotulo, valor: valor || "", resolver });
@@ -853,6 +986,7 @@ createApp({
         const evento = JSON.parse(ev.data);
         if (evento.tipo === "estado") {
           for (const e of evento.estados) this.estados[e.id] = e;
+          this.agora = Date.now(); // acerta o relogio na hora, sem esperar o proximo segundo
         } else if (evento.tipo === "log") {
           if (evento.id === this.logAtual) this.acrescentarLog(evento.linha);
         } else if (evento.tipo === "config") {
@@ -866,7 +1000,7 @@ createApp({
         } else if (evento.tipo === "aviso") {
           this.avisar(evento.texto, evento.erro ? "erro" : "");
         } else if (evento.tipo === "fim") {
-          this.avisar("subida encerrada.", "ok");
+          this.resumirSubida(evento.ids || []);
           this.atualizarPlano();
         }
       };
@@ -895,9 +1029,15 @@ createApp({
       const noFim = alvo.scrollHeight - alvo.scrollTop - alvo.clientHeight < 40;
       const no = document.createElement("span");
       if (linha.startsWith("> ")) no.className = "eco";
+      else if (/\b(error|erro|exception|panic|fatal|failed|falhou)\b/i.test(linha)) no.className = "ruim";
+      else if (/\b(warn|warning|aviso)\b/i.test(linha)) no.className = "atencao";
       no.textContent = linha + "\n";
       alvo.appendChild(no);
       if (noFim) alvo.scrollTop = alvo.scrollHeight;
+    },
+    // limparLog so limpa a tela: o historico continua no servidor e volta ao reabrir o log.
+    limparLog() {
+      if (this.$refs.log) this.$refs.log.textContent = "";
     },
 
     // ------------------------------------------------------------------
@@ -905,10 +1045,13 @@ createApp({
     // ------------------------------------------------------------------
     avisar(texto, tipo = "") {
       const id = this.proximoAviso++;
-      this.avisos.push({ id, texto, tipo });
-      setTimeout(() => {
-        this.avisos = this.avisos.filter((a) => a.id !== id);
-      }, 6000);
+      // No maximo cinco na tela: uma subida grande nao pode cobrir os cartoes de avisos.
+      this.avisos = [...this.avisos.slice(-4), { id, texto, tipo }];
+      // Erro fica o dobro do tempo - e o que a pessoa precisa conseguir ler.
+      setTimeout(() => this.fecharAviso(id), tipo === "erro" ? 12000 : 5000);
+    },
+    fecharAviso(id) {
+      this.avisos = this.avisos.filter((a) => a.id !== id);
     },
   },
 }).mount("#app");

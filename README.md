@@ -151,14 +151,38 @@ Os projetos docker da mesma onda compartilham uma unica abertura.
 
 ## Acoes
 
-**Por projeto:** `log`, `subir`, `↻` (reiniciar: para e sobe de novo), `parar` e o menu `⋯`
-com editar, abrir a pasta no Explorer, abrir no VS Code e copiar o comando.
+**Por projeto:** `log` e uma acao principal que muda com o estado - `▶ subir` quando esta
+parado ou com erro, `■ cancelar` enquanto sobe, `■ parar` (e `↻` reiniciar) quando esta no
+ar. O menu `⋯` tem editar, reiniciar, forcar parada (derruba o que estiver na porta mesmo
+com o cartao marcando parado), abrir a pasta no Explorer, abrir no VS Code e copiar o
+comando.
 
 **Por grupo:** o cabecalho de cada secao tem `+ projeto`, `subir`, `parar`, `reiniciar`,
 `renomear`, `↑ ↓` e `apagar` - entao da para derrubar uma empresa inteira sem mexer no
-resto.
+resto. Clicar no nome recolhe o grupo (o navegador lembra), e o contador ao lado diz
+quantos estao no ar.
 
 **No topo:** parar / reiniciar / subir o que estiver marcado.
+
+**Subidas ao mesmo tempo:** da para mandar subir um projeto com outro ainda subindo - a
+trava e por projeto, nao global. Se o que foi pedido depende de algo que ja esta subindo,
+ele espera aquela subida em vez de iniciar o mesmo processo duas vezes. `cancelar` (ou
+`parar`) no meio da subida interrompe a espera na hora, em vez de segurar ate o timeout.
+
+## Lendo a tela
+
+- **Selo de estado** ao lado do nome: `parado`, `na fila`/`esperando <quem>`,
+  `subindo · 12s`, `no ar`, `erro`, `bloqueado`. Em erro ou bloqueio o motivo aparece na
+  linha de baixo, com **ver log**.
+- **Pavio:** enquanto o projeto sobe, a barra na base do cartao mostra quanto do timeout ja
+  foi gasto; fica ambar no ultimo quarto.
+- **Filtro:** a caixa na barra de perfis (atalho `/`, `Esc` limpa) filtra por nome, pasta ou
+  porta. Os contadores do topo (`no ar`, `subindo`, `falha`) tambem sao filtros: clicar em
+  `falha` deixa na tela so o que quebrou.
+- **Log:** ocupa a altura que sobrar da lateral; `▶ subir` num cartao ja abre o log dele.
+  Linhas com erro saem em vermelho, avisos em ambar. Docker e plano de subida recolhem
+  pelo titulo.
+- **Avisos:** erro fica 12s na tela, o resto 5s, e todos fecham no `×`.
 
 ## Grupos
 
