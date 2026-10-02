@@ -317,11 +317,18 @@ main {
 }
 .git .ramo {
   padding: 0 6px;
+  font: inherit;
   color: var(--texto);
   background: rgba(125, 173, 160, 0.1);
   border: 1px solid var(--linha-forte);
   border-radius: 2px;
+  cursor: pointer;
 }
+.git .ramo:hover { color: var(--ambar); border-color: var(--ambar); }
+/* Com arquivo mexido o branch nao troca: continua clicavel porque o retrato do cartao pode
+   estar atrasado - o modal le o git na hora e explica. */
+.git .ramo.travado { cursor: not-allowed; }
+.git .ramo.travado:hover { color: var(--texto); border-color: var(--linha-forte); }
 .git .atras { color: var(--vermelho); }
 .git .frente { color: var(--azul); }
 .git .mexido { color: var(--ambar); }
@@ -404,7 +411,8 @@ main {
   cursor: pointer;
 }
 .modo-opcao[aria-pressed="true"] { color: var(--tinta); background: var(--fraco); }
-.modo-opcao:hover:not([aria-pressed="true"]) { color: var(--texto); background: rgba(255, 255, 255, 0.04); }
+.modo-opcao:hover:not([aria-pressed="true"]):not([disabled]) { color: var(--texto); background: rgba(255, 255, 255, 0.04); }
+.modo-opcao[disabled] { opacity: 0.4; cursor: not-allowed; }
 .modo.oculto { visibility: hidden; }
 
 .botoes { display: flex; align-items: center; gap: 6px; }
@@ -573,11 +581,12 @@ main {
 
 /* ---------------- avisos ---------------- */
 
+/* Acima do modal (50): aviso de erro escondido atras do fundo escuro parece botao morto. */
 .avisos {
   position: fixed;
   right: 18px;
   bottom: 18px;
-  z-index: 40;
+  z-index: 55;
   display: flex;
   flex-direction: column;
   gap: 8px;
@@ -797,6 +806,17 @@ main {
   border-top: 1px solid var(--linha);
 }
 .modal-acoes .esquerda { margin-right: auto; }
+
+/* Erro do modal: fica colado no rodape, a vista mesmo com o corpo rolado. */
+.erro-modal {
+  margin: 0;
+  padding: 9px 16px;
+  font-size: 11.5px;
+  color: var(--vermelho);
+  background: rgba(255, 98, 87, 0.08);
+  border-top: 1px solid rgba(255, 98, 87, 0.35);
+}
+.nota-modal { margin: 10px 0 0; font-size: 10.5px; color: var(--fraco); }
 .botao.perigo { color: var(--vermelho); border-color: rgba(255, 98, 87, 0.45); }
 .botao.perigo:hover { color: #fff; background: rgba(255, 98, 87, 0.2); border-color: var(--vermelho); }
 .botao.primario.perigo { color: #170a0a; background: var(--vermelho); border-color: var(--vermelho); }
@@ -827,6 +847,7 @@ main {
   border: 1px solid var(--linha-forte);
   border-radius: 2px;
 }
+.campo input[disabled], .campo select[disabled] { opacity: 0.45; cursor: not-allowed; }
 .campo input:focus, .campo select:focus, .campo textarea:focus {
   outline: none;
   border-color: var(--ambar);
@@ -899,7 +920,7 @@ main {
 }
 .trilha b { color: var(--texto); font-weight: 500; }
 
-.lista-pastas {
+.lista-pastas, .lista-branches {
   display: flex;
   flex-direction: column;
   gap: 2px;
@@ -937,6 +958,14 @@ main {
   border-radius: 2px;
 }
 .item-pasta.acima { color: var(--fraco); }
+
+/* ---------------- troca de branch ---------------- */
+
+.filtro-branch { margin-bottom: 8px; }
+.nota-lista { padding: 8px; font-size: 11.5px; color: var(--fraco); }
+.item-pasta[disabled] { cursor: default; opacity: 0.55; }
+.item-pasta[disabled]:hover { background: none; border-color: transparent; }
+.item-pasta.atual { opacity: 1; color: var(--ambar); }
 .lista-pastas:empty::after { content: "nenhuma subpasta aqui."; padding: 8px; font-size: 11.5px; color: var(--fraco); }
 
 ::-webkit-scrollbar { width: 9px; height: 9px; }

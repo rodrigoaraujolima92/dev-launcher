@@ -117,6 +117,35 @@ func TestLerCommit(t *testing.T) {
 	}
 }
 
+func TestLerBranches(t *testing.T) {
+	got := lerBranches(`refs/heads/feat/polaroid
+refs/heads/main
+refs/remotes/origin/HEAD
+refs/remotes/origin/feat/polaroid
+refs/remotes/origin/fix/login
+refs/remotes/origin/main
+refs/remotes/upstream/fix/login
+`)
+	queria := []Branch{
+		{Nome: "feat/polaroid"},
+		{Nome: "main"},
+		// So no remoto: entra uma vez, com o primeiro remoto que o tiver. origin/HEAD e
+		// ponteiro, e quem ja tem branch local nao repete.
+		{Nome: "fix/login", Remoto: "origin"},
+	}
+	if len(got) != len(queria) {
+		t.Fatalf("branches = %+v, queria %+v", got, queria)
+	}
+	for i := range queria {
+		if got[i] != queria[i] {
+			t.Fatalf("branches[%d] = %+v, queria %+v", i, got[i], queria[i])
+		}
+	}
+	if got := lerBranches(""); len(got) != 0 {
+		t.Fatalf("repositorio sem branch = %+v", got)
+	}
+}
+
 // ------------------------------------------------------------------
 // cache
 // ------------------------------------------------------------------
@@ -128,6 +157,9 @@ type gitFake struct {
 	buscas    []string
 	erro      error
 	demora    time.Duration
+	branches  []Branch
+	trocas    []Branch
+	erroTroca error
 }
 
 func novoGitFake() *gitFake {
@@ -152,6 +184,31 @@ func (g *gitFake) Buscar(_ context.Context, dir string) error {
 	defer g.mu.Unlock()
 	g.buscas = append(g.buscas, dir)
 	return g.erro
+}
+
+func (g *gitFake) Branches(_ context.Context, _ string) ([]Branch, error) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	return append([]Branch{}, g.branches...), nil
+}
+
+// Trocar faz o que o git faria: depois de um switch que deu certo, o estado da pasta passa a
+// apontar para o branch novo.
+func (g *gitFake) Trocar(_ context.Context, dir string, b Branch) error {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	g.trocas = append(g.trocas, b)
+	if g.erroTroca != nil {
+		return g.erroTroca
+	}
+	g.estados[dir] = EstadoGit{Repo: true, Branch: b.Nome}
+	return nil
+}
+
+func (g *gitFake) trocasFeitas() []Branch {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	return append([]Branch{}, g.trocas...)
 }
 
 func (g *gitFake) vezes(dir string) int {
@@ -328,6 +385,124 @@ func TestBuscarGitEmTodosOuNumProjeto(t *testing.T) {
 	}
 	if len(erros) != 1 || !strings.Contains(erros[0].Error(), "api") {
 		t.Fatalf("o erro deveria dizer de qual projeto veio: %v", erros)
+	}
+}
+
+func TestTrocarBranchSoComRepositorioLimpo(t *testing.T) {
+	g, _, _ := gerenteTeste(t, nil)
+	fake := g.git.sonda.(*gitFake)
+	dir := filepath.Join(g.raiz, "backend")
+	fake.branches = []Branch{{Nome: "main"}, {Nome: "fix/login", Remoto: "origin"}}
+
+	// Arquivo nao rastreado tambem conta: a tela mostra como "mexido".
+	for _, sujo := range []EstadoGit{
+		{Repo: true, Branch: "main", Modificados: 1},
+		{Repo: true, Branch: "main", Preparados: 1},
+		{Repo: true, Branch: "main", NaoRastreados: 1},
+		{Repo: true, Branch: "main", Conflitos: 1},
+	} {
+		fake.mu.Lock()
+		fake.estados[dir] = sujo
+		fake.mu.Unlock()
+		err := g.TrocarBranch(context.Background(), "api", "fix/login")
+		if err == nil || !strings.Contains(err.Error(), "alteracao") {
+			t.Fatalf("com %+v deveria recusar citando as alteracoes, veio %v", sujo, err)
+		}
+	}
+	if got := fake.trocasFeitas(); len(got) != 0 {
+		t.Fatalf("repositorio sujo nao pode chegar no git switch: %v", got)
+	}
+
+	fake.mu.Lock()
+	fake.estados[dir] = EstadoGit{Repo: true, Branch: "main"}
+	fake.mu.Unlock()
+	if err := g.TrocarBranch(context.Background(), "api", "fix/login"); err != nil {
+		t.Fatal(err)
+	}
+	// O branch vai inteiro para a sonda: e o Remoto que diz que o local precisa ser criado.
+	if got := fake.trocasFeitas(); len(got) != 1 || got[0] != (Branch{Nome: "fix/login", Remoto: "origin"}) {
+		t.Fatalf("trocas = %+v", got)
+	}
+	if got := g.EstadosGit(context.Background(), false)["api"].Branch; got != "fix/login" {
+		t.Fatalf("depois da troca a tela deveria ver fix/login, viu %q", got)
+	}
+}
+
+func TestTrocarBranchRecusaOQueNaoEstaNaLista(t *testing.T) {
+	g, _, _ := gerenteTeste(t, nil)
+	fake := g.git.sonda.(*gitFake)
+	fake.branches = []Branch{{Nome: "main"}, {Nome: "dev"}}
+
+	// O nome vem do navegador: so vira argumento do git se o repositorio conhecer.
+	for _, nome := range []string{"--force", "nao-existe", ""} {
+		if err := g.TrocarBranch(context.Background(), "api", nome); err == nil {
+			t.Fatalf("%q deveria ser recusado", nome)
+		}
+	}
+	// Servico docker nao tem repositorio; id desconhecido tambem nao.
+	for _, id := range []string{"db", "fantasma"} {
+		if err := g.TrocarBranch(context.Background(), id, "dev"); err == nil {
+			t.Fatalf("%q nao deveria aceitar troca de branch", id)
+		}
+	}
+	// Pedir o branch em que ja esta nao e erro, e nao roda git a toa.
+	if err := g.TrocarBranch(context.Background(), "api", "main"); err != nil {
+		t.Fatal(err)
+	}
+	if got := fake.trocasFeitas(); len(got) != 0 {
+		t.Fatalf("nenhuma troca deveria ter chegado ao git: %v", got)
+	}
+}
+
+func TestTrocarBranchDevolveOErroDoGit(t *testing.T) {
+	g, _, _ := gerenteTeste(t, nil)
+	fake := g.git.sonda.(*gitFake)
+	fake.branches = []Branch{{Nome: "main"}, {Nome: "dev"}}
+	fake.erroTroca = errors.New("fatal: nao deu")
+
+	err := g.TrocarBranch(context.Background(), "api", "dev")
+	if err == nil || !strings.Contains(err.Error(), "nao deu") {
+		t.Fatalf("o erro do git deveria chegar na tela: %v", err)
+	}
+}
+
+func TestRotasDeBranch(t *testing.T) {
+	h, g := servidorTeste(t, nil)
+	fake := g.git.sonda.(*gitFake)
+	fake.branches = []Branch{{Nome: "main"}, {Nome: "dev"}}
+
+	resp := chamar(t, h, http.MethodGet, "/api/servicos/api/branches", "")
+	if resp.Code != http.StatusOK {
+		t.Fatalf("codigo %d: %s", resp.Code, resp.Body)
+	}
+	var lista ListaBranches
+	if err := json.Unmarshal(resp.Body.Bytes(), &lista); err != nil {
+		t.Fatal(err)
+	}
+	if lista.Atual != "main" || !lista.Limpo || len(lista.Branches) != 2 {
+		t.Fatalf("lista = %+v", lista)
+	}
+
+	resp = chamar(t, h, http.MethodPost, "/api/servicos/api/branch", `{"branch":"dev"}`)
+	if resp.Code != http.StatusOK {
+		t.Fatalf("codigo %d: %s", resp.Code, resp.Body)
+	}
+	var corpo struct {
+		Git map[string]EstadoGit `json:"git"`
+	}
+	if err := json.Unmarshal(resp.Body.Bytes(), &corpo); err != nil {
+		t.Fatal(err)
+	}
+	if corpo.Git["api"].Branch != "dev" {
+		t.Fatalf("a resposta deveria trazer o branch novo: %+v", corpo.Git["api"])
+	}
+
+	fake.mu.Lock()
+	fake.estados[filepath.Join(g.raiz, "backend")] = EstadoGit{Repo: true, Branch: "dev", Modificados: 3}
+	fake.mu.Unlock()
+	resp = chamar(t, h, http.MethodPost, "/api/servicos/api/branch", `{"branch":"main"}`)
+	if resp.Code != http.StatusBadRequest {
+		t.Fatalf("repositorio sujo deveria dar 400, deu %d", resp.Code)
 	}
 }
 

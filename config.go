@@ -23,7 +23,7 @@ type Compose struct {
 // Checagem e como o launcher decide que um servico esta "pronto" - nao basta o
 // processo existir, a dependencia so libera quando ele realmente atende.
 type Checagem struct {
-	Tipo  string   `json:"tipo"` // porta | comando | http
+	Tipo  string   `json:"tipo"` // porta | comando | http | processo
 	Porta int      `json:"porta,omitempty"`
 	Cmd   []string `json:"cmd,omitempty"`
 	URL   string   `json:"url,omitempty"`
@@ -311,7 +311,18 @@ func validarServico(s *Servico) error {
 	switch s.Pronto.Tipo {
 	case "porta":
 		if s.Pronto.Porta <= 0 || s.Pronto.Porta > 65535 {
+			if s.Tipo == TipoApp {
+				return fmt.Errorf("%s: checagem por porta sem porta valida - informe a porta, ou use a checagem \"processo\" se o projeto nao abre porta", s.ID)
+			}
 			return fmt.Errorf("%s: checagem por porta sem porta valida", s.ID)
+		}
+	case "processo":
+		// So da para afirmar que o processo esta de pe quando e o launcher que o segura.
+		if s.Tipo != TipoApp {
+			return fmt.Errorf("%s: a checagem \"processo\" so vale para aplicacao/script", s.ID)
+		}
+		if s.Modo == ModoTerminal {
+			return fmt.Errorf("%s: a checagem \"processo\" so funciona no modo gerenciado - na aba do terminal o launcher nao enxerga o processo", s.ID)
 		}
 	case "comando":
 		if len(s.Pronto.Cmd) == 0 {
@@ -322,7 +333,7 @@ func validarServico(s *Servico) error {
 			return fmt.Errorf("%s: checagem http sem url", s.ID)
 		}
 	default:
-		return fmt.Errorf("%s: pronto.tipo invalido %q (use porta, comando ou http)", s.ID, s.Pronto.Tipo)
+		return fmt.Errorf("%s: pronto.tipo invalido %q (use porta, comando, http ou processo)", s.ID, s.Pronto.Tipo)
 	}
 
 	for _, d := range s.Depende {

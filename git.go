@@ -43,6 +43,15 @@ func (e EstadoGit) Limpo() bool {
 type SondaGit interface {
 	Estado(ctx context.Context, dir string) EstadoGit
 	Buscar(ctx context.Context, dir string) error
+	Branches(ctx context.Context, dir string) ([]Branch, error)
+	Trocar(ctx context.Context, dir string, b Branch) error
+}
+
+// Branch e um destino possivel de troca. Remoto vem preenchido quando o branch so existe no
+// remoto (origin/feat-x sem feat-x local): trocar para ele cria o local ja acompanhando.
+type Branch struct {
+	Nome   string `json:"nome"`
+	Remoto string `json:"remoto,omitempty"`
 }
 
 type SondaGitSO struct{}
@@ -87,6 +96,67 @@ func (SondaGitSO) Buscar(ctx context.Context, dir string) error {
 		return errString(primeiraLinha(saida))
 	}
 	return nil
+}
+
+func (SondaGitSO) Branches(ctx context.Context, dir string) ([]Branch, error) {
+	saida, err := rodarComando(ctx, 20*time.Second, "git", "-C", dir,
+		"for-each-ref", "--format=%(refname)", "refs/heads", "refs/remotes")
+	if err != nil {
+		if saida == "" {
+			saida = "nao consegui listar os branches"
+		}
+		return nil, errString(primeiraLinha(saida))
+	}
+	return lerBranches(saida), nil
+}
+
+func (SondaGitSO) Trocar(ctx context.Context, dir string, b Branch) error {
+	args := []string{"-C", dir, "switch", b.Nome}
+	if b.Remoto != "" {
+		// --track explicito em vez de confiar no palpite do git: com dois remotos tendo o
+		// mesmo branch, o "git switch nome" puro se recusa por ambiguidade.
+		args = []string{"-C", dir, "switch", "--track", b.Remoto + "/" + b.Nome}
+	}
+	saida, err := rodarComando(ctx, time.Minute, "git", args...)
+	if err != nil {
+		if saida == "" {
+			saida = "git switch falhou"
+		}
+		return errString(primeiraLinha(saida))
+	}
+	return nil
+}
+
+// lerBranches interpreta a saida de "git for-each-ref --format=%(refname) refs/heads
+// refs/remotes": primeiro os locais, depois os que so existem em algum remoto.
+//
+//	refs/heads/main
+//	refs/remotes/origin/HEAD          (ponteiro do remoto, nao e branch)
+//	refs/remotes/origin/feat/polaroid
+func lerBranches(saida string) []Branch {
+	locais := []Branch{}
+	remotos := []Branch{}
+	visto := map[string]bool{}
+	for _, linha := range strings.Split(saida, "\n") {
+		linha = strings.TrimSpace(linha)
+		if nome, ok := strings.CutPrefix(linha, "refs/heads/"); ok && nome != "" {
+			locais = append(locais, Branch{Nome: nome})
+			visto[nome] = true
+		}
+	}
+	for _, linha := range strings.Split(saida, "\n") {
+		resto, ok := strings.CutPrefix(strings.TrimSpace(linha), "refs/remotes/")
+		if !ok {
+			continue
+		}
+		remoto, nome, ok := strings.Cut(resto, "/")
+		if !ok || nome == "" || nome == "HEAD" || visto[nome] {
+			continue
+		}
+		remotos = append(remotos, Branch{Nome: nome, Remoto: remoto})
+		visto[nome] = true
+	}
+	return append(locais, remotos...)
 }
 
 type errString string
@@ -273,6 +343,20 @@ func (c *CacheGit) Estados(ctx context.Context, dirs []string, forcar bool) map[
 // Buscar roda o fetch e ja invalida o cache da pasta.
 func (c *CacheGit) Buscar(ctx context.Context, dir string) error {
 	err := c.sonda.Buscar(ctx, dir)
+	c.mu.Lock()
+	delete(c.itens, dir)
+	c.mu.Unlock()
+	return err
+}
+
+func (c *CacheGit) Branches(ctx context.Context, dir string) ([]Branch, error) {
+	return c.sonda.Branches(ctx, dir)
+}
+
+// Trocar muda de branch e invalida o cache da pasta - mesmo quando falha, porque um switch
+// recusado no meio pode ter deixado o repositorio diferente do que a tela mostra.
+func (c *CacheGit) Trocar(ctx context.Context, dir string, b Branch) error {
+	err := c.sonda.Trocar(ctx, dir, b)
 	c.mu.Lock()
 	delete(c.itens, dir)
 	c.mu.Unlock()

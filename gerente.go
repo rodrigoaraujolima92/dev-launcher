@@ -749,6 +749,81 @@ func (g *Gerente) BuscarGit(ctx context.Context, ids []string) []error {
 	return erros
 }
 
+// ListaBranches e o que a tela precisa para oferecer a troca: onde o repositorio esta, para
+// onde pode ir e se pode ir agora.
+type ListaBranches struct {
+	Atual    string   `json:"atual"`
+	Limpo    bool     `json:"limpo"`
+	Branches []Branch `json:"branches"`
+}
+
+// repoDoProjeto devolve a pasta do projeto e o estado fresco do git nela - a decisao de
+// trocar de branch nao pode se apoiar num retrato de 20 segundos atras.
+func (g *Gerente) repoDoProjeto(ctx context.Context, id string) (string, EstadoGit, error) {
+	if g.git == nil {
+		return "", EstadoGit{}, errors.New("git indisponivel")
+	}
+	dir, ok := g.pastasDosProjetos()[id]
+	if !ok {
+		return "", EstadoGit{}, fmt.Errorf("%s nao e um projeto com pasta de codigo", id)
+	}
+	estado := g.git.Estados(ctx, []string{dir}, true)[dir]
+	if estado.Erro != "" {
+		return "", estado, errors.New(estado.Erro)
+	}
+	if !estado.Repo {
+		return "", estado, fmt.Errorf("%s nao esta num repositorio git", id)
+	}
+	return dir, estado, nil
+}
+
+func (g *Gerente) BranchesGit(ctx context.Context, id string) (ListaBranches, error) {
+	dir, estado, err := g.repoDoProjeto(ctx, id)
+	if err != nil {
+		return ListaBranches{}, err
+	}
+	branches, err := g.git.Branches(ctx, dir)
+	if err != nil {
+		return ListaBranches{}, err
+	}
+	// O cartao pode estar mostrando um retrato velho (commit feito ha 10 segundos): aproveita
+	// a leitura fresca para atualizar a tela.
+	g.PublicarGit(ctx, false)
+	return ListaBranches{Atual: estado.Branch, Limpo: estado.Limpo(), Branches: branches}, nil
+}
+
+// TrocarBranch so troca com a copia de trabalho limpa: com arquivo mexido o git ou recusa,
+// ou - pior - carrega a alteracao para o outro branch sem avisar. O nome pedido tem que
+// estar na lista do proprio repositorio, entao nada vindo do navegador vira argumento solto
+// do git.
+func (g *Gerente) TrocarBranch(ctx context.Context, id, nome string) error {
+	dir, estado, err := g.repoDoProjeto(ctx, id)
+	if err != nil {
+		return err
+	}
+	if !estado.Limpo() {
+		mexidos := estado.Preparados + estado.Modificados + estado.NaoRastreados + estado.Conflitos
+		g.PublicarGit(ctx, false)
+		return fmt.Errorf("%s tem %d arquivo(s) com alteracao - faca commit ou stash antes de trocar de branch", id, mexidos)
+	}
+	if estado.Branch == nome {
+		return nil
+	}
+	branches, err := g.git.Branches(ctx, dir)
+	if err != nil {
+		return err
+	}
+	for _, b := range branches {
+		if b.Nome == nome {
+			err := g.git.Trocar(ctx, dir, b)
+			// Publica mesmo com erro: a tela precisa mostrar onde o repositorio ficou.
+			g.PublicarGit(ctx, false)
+			return err
+		}
+	}
+	return fmt.Errorf("branch desconhecido: %s", nome)
+}
+
 func contemString(lista []string, alvo string) bool {
 	for _, v := range lista {
 		if v == alvo {

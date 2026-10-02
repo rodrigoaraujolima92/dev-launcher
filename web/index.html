@@ -129,7 +129,9 @@
             </p>
 
             <div class="git" v-if="git[s.id] && git[s.id].repo" :title="tituloGit(git[s.id])">
-              <span class="ramo">⎇ {{ git[s.id].branch || 'detached' }}</span>
+              <button type="button" class="ramo" :class="{ travado: !podeTrocarBranch(git[s.id]) }"
+                      :title="podeTrocarBranch(git[s.id]) ? 'trocar de branch' : 'ha alteracoes locais - commit ou stash antes de trocar de branch'"
+                      @click="abrirBranches(s)">⎇ {{ git[s.id].branch || 'detached' }}</button>
               <span v-if="git[s.id].atras" class="atras" title="commits do remoto que faltam aqui">↓{{ git[s.id].atras }}</span>
               <span v-if="git[s.id].frente" class="frente" title="commits locais que o remoto nao tem">↑{{ git[s.id].frente }}</span>
               <span v-if="!git[s.id].upstream" class="sem-upstream">sem upstream</span>
@@ -163,7 +165,9 @@
               <button type="button" class="modo-opcao" :aria-pressed="(s.modo || 'gerenciado') === 'gerenciado' ? 'true' : 'false'"
                       @click="trocarModo(s, 'gerenciado')">log aqui</button>
               <button type="button" class="modo-opcao" :aria-pressed="s.modo === 'terminal' ? 'true' : 'false'"
-                      :title="temWt ? '' : 'Windows Terminal nao encontrado - cai para modo gerenciado'"
+                      :disabled="s.pronto.tipo === 'processo'"
+                      :title="s.pronto.tipo === 'processo' ? 'a checagem &quot;processo rodando&quot; so funciona com o log aqui'
+                              : (temWt ? '' : 'Windows Terminal nao encontrado - cai para modo gerenciado')"
                       @click="trocarModo(s, 'terminal')">aba do wt</button>
             </div>
             <div class="botoes">
@@ -181,6 +185,9 @@
                   <button type="button" @click="copiarComando(s)">copiar comando</button>
                   <button v-if="git[s.id] && git[s.id].repo" type="button" @click="buscarGit([s.id])">
                     git fetch deste projeto
+                  </button>
+                  <button v-if="git[s.id] && git[s.id].repo" type="button" @click="abrirBranches(s)">
+                    trocar de branch
                   </button>
                 </div>
               </details>
@@ -299,6 +306,31 @@
           {{ topo.perfil.servicos.map(nomeDe).join(', ') }}
         </p>
 
+        <!-- troca de branch -->
+        <template v-else-if="topo.tipo === 'branch'">
+          <div class="trilha">branch atual: <b>{{ topo.atual || '?' }}</b></div>
+          <div class="campo largo filtro-branch">
+            <input type="text" v-model="topo.filtro" ref="entradaFiltro" placeholder="filtrar branches"
+                   aria-label="filtrar branches" @keydown.enter="trocarUnicoBranch">
+          </div>
+          <div class="lista-branches">
+            <span v-if="topo.carregando" class="nota-lista">lendo os branches...</span>
+            <span v-else-if="!branchesVisiveis(topo).length" class="nota-lista">nenhum branch por aqui.</span>
+            <button v-for="b in branchesVisiveis(topo)" :key="b.nome" type="button" class="item-pasta"
+                    :class="{ atual: b.nome === topo.atual }"
+                    :disabled="!!topo.trocando || !topo.limpo || b.nome === topo.atual"
+                    @click="trocarBranch(b)">
+              <span class="nome-pasta">{{ b.nome }}</span>
+              <span class="marcas">
+                <span v-if="topo.trocando === b.nome" class="marca">trocando...</span>
+                <span v-if="b.nome === topo.atual" class="marca">atual</span>
+                <span v-if="b.remoto" class="marca">so em {{ b.remoto }}</span>
+              </span>
+            </button>
+          </div>
+          <p class="nota-modal">branch que so existe no remoto aparece conforme o ultimo git fetch; trocar para ele cria o local.</p>
+        </template>
+
         <!-- seletor de pastas -->
         <template v-else-if="topo.tipo === 'pasta'">
           <div class="trilha">pasta atual: <b>{{ pastas.caminho }}</b></div>
@@ -333,8 +365,8 @@
           <div class="campo largo">
             <span class="rotulo-campo">tipo</span>
             <div class="seletor-tipo">
-              <button type="button" :aria-pressed="form.tipo === 'app' ? 'true' : 'false'" @click="form.tipo = 'app'">aplicacao / script</button>
-              <button type="button" :aria-pressed="form.tipo === 'docker' ? 'true' : 'false'" @click="form.tipo = 'docker'">container docker</button>
+              <button type="button" :aria-pressed="form.tipo === 'app' ? 'true' : 'false'" @click="trocarTipo('app')">aplicacao / script</button>
+              <button type="button" :aria-pressed="form.tipo === 'docker' ? 'true' : 'false'" @click="trocarTipo('docker')">container docker</button>
             </div>
           </div>
 
@@ -365,7 +397,7 @@
             </div>
             <div class="campo">
               <span class="rotulo-campo">modo</span>
-              <select v-model="form.modo">
+              <select v-model="form.modo" :disabled="form.prontoTipo === 'processo'">
                 <option value="gerenciado">log aqui (gerenciado)</option>
                 <option value="terminal">aba do Windows Terminal</option>
               </select>
@@ -400,6 +432,7 @@
           <div class="campo">
             <span class="rotulo-campo">porta</span>
             <input type="number" v-model.number="form.porta" min="0" max="65535" placeholder="7003">
+            <span class="ajuda">em branco se o projeto nao abre porta</span>
           </div>
           <div class="campo">
             <span class="rotulo-campo">url (botao abrir)</span>
@@ -407,16 +440,17 @@
           </div>
           <div class="campo">
             <span class="rotulo-campo">como saber que ficou pronto</span>
-            <select v-model="form.prontoTipo">
+            <select v-model="form.prontoTipo" @change="aoTrocarChecagem">
               <option value="porta">porta atendendo</option>
               <option value="http">http respondendo</option>
               <option value="comando">comando com saida 0</option>
+              <option v-if="form.tipo === 'app'" value="processo">processo rodando (nao abre porta)</option>
             </select>
           </div>
           <div class="campo">
             <span class="rotulo-campo">detalhe da checagem</span>
-            <input type="text" v-model="form.prontoDetalhe">
-            <span class="ajuda">porta, url ou comando conforme a opcao ao lado</span>
+            <input type="text" v-model="form.prontoDetalhe" :disabled="form.prontoTipo === 'processo'">
+            <span class="ajuda">{{ ajudaChecagem() }}</span>
           </div>
           <div class="campo">
             <span class="rotulo-campo">timeout (segundos)</span>
@@ -436,12 +470,14 @@
         </div>
       </div>
 
+      <p v-if="erroModal" class="erro-modal" role="alert">{{ erroModal }}</p>
+
       <footer class="modal-acoes">
         <button v-if="topo.tipo === 'servico' && form.id" type="button" class="botao perigo esquerda" @click="apagarServico">apagar</button>
         <button v-if="topo.tipo === 'perfil'" type="button" class="botao perigo esquerda" @click="apagarPerfil(topo.perfil)">apagar</button>
         <button v-if="topo.tipo === 'perfil'" type="button" class="botao" @click="renomearPerfil(topo.perfil)">renomear</button>
 
-        <button type="button" class="botao" @click="fecharTopo">cancelar</button>
+        <button type="button" class="botao" @click="fecharTopo">{{ topo.tipo === 'branch' ? 'fechar' : 'cancelar' }}</button>
 
         <button v-if="topo.tipo === 'texto'" type="button" class="botao primario" @click="confirmarTexto">confirmar</button>
         <button v-else-if="topo.tipo === 'confirmar'" type="button" class="botao primario perigo" @click="topo.resolver(true); fecharTopo(true)">confirmar</button>
