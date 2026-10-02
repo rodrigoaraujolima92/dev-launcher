@@ -270,9 +270,7 @@ func TestNavegarPastasRespeitaACerca(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	if err := g.mutar(func(cfg *Config) error { cfg.RaizNavegacao = raiz; return nil }); err != nil {
-		t.Fatal(err)
-	}
+	g.raizNavegacao = raiz
 
 	resp := chamar(t, h, http.MethodGet, "/api/pastas", "")
 	if resp.Code != http.StatusOK {
@@ -304,9 +302,7 @@ func TestInspecionarPelaAPI(t *testing.T) {
 		[]byte(`{"scripts":{"dev":"vite --port 5173"}}`), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if err := g.mutar(func(cfg *Config) error { cfg.RaizNavegacao = raiz; return nil }); err != nil {
-		t.Fatal(err)
-	}
+	g.raizNavegacao = raiz
 
 	resp := chamar(t, h, http.MethodGet, "/api/inspecionar?caminho="+url.QueryEscape(projeto), "")
 	if resp.Code != http.StatusOK {

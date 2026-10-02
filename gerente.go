@@ -62,8 +62,13 @@ type tarefa struct {
 }
 
 type Gerente struct {
-	mu           sync.Mutex
-	raiz         string
+	mu   sync.Mutex
+	raiz string
+	// raizNavegacao e a raiz_navegacao do config ja resolvida para esta maquina. Fica aqui,
+	// e nao no Config, porque tudo que esta no Config vai para o disco no proximo salvamento.
+	// Vazia = sem cerca.
+	raizNavegacao string
+
 	caminhoCfg   string
 	cfg          *Config
 	exec         Executor
@@ -79,18 +84,19 @@ type Gerente struct {
 	ultimoDocker string // ultimo estado do docker publicado, para nao repetir evento igual
 }
 
-func NovoGerente(raiz, caminhoCfg string, cfg *Config, exe Executor, docker SondaDocker, git *CacheGit) *Gerente {
+func NovoGerente(raiz, raizNavegacao, caminhoCfg string, cfg *Config, exe Executor, docker SondaDocker, git *CacheGit) *Gerente {
 	g := &Gerente{
-		raiz:       raiz,
-		caminhoCfg: caminhoCfg,
-		cfg:        cfg,
-		exec:       exe,
-		docker:     docker,
-		git:        git,
-		estados:    map[string]*Estado{},
-		logs:       map[string]*anel{},
-		inscritos:  map[int]chan []byte{},
-		intervalo:  time.Second,
+		raiz:          raiz,
+		raizNavegacao: raizNavegacao,
+		caminhoCfg:    caminhoCfg,
+		cfg:           cfg,
+		exec:          exe,
+		docker:        docker,
+		git:           git,
+		estados:       map[string]*Estado{},
+		logs:          map[string]*anel{},
+		inscritos:     map[int]chan []byte{},
+		intervalo:     time.Second,
 	}
 	for _, s := range cfg.Servicos {
 		g.estados[s.ID] = &Estado{ID: s.ID, Status: StatusParado, Desde: time.Now()}
@@ -271,7 +277,7 @@ func (g *Gerente) SalvarServico(entrada EntradaServico) (string, error) {
 	var id string
 	err := g.mutar(func(cfg *Config) error {
 		var err error
-		id, err = salvarServico(cfg, entrada, g.raiz, cfg.RaizNavegacao)
+		id, err = salvarServico(cfg, entrada, g.raiz, g.raizNavegacao)
 		return err
 	})
 	return id, err
