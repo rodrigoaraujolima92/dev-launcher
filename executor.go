@@ -55,6 +55,13 @@ func (e *ExecutorSO) Pronto(ctx context.Context, s *Servico) bool {
 		}
 		_, err := rodarComando(ctx, 15*time.Second, s.Pronto.Cmd[0], s.Pronto.Cmd[1:]...)
 		return err == nil
+	case "processo":
+		// Bot, worker, script: nao abre porta nenhuma, entao "pronto" e o processo que o
+		// launcher iniciou continuar vivo.
+		e.mu.Lock()
+		defer e.mu.Unlock()
+		_, vivo := e.procs[s.ID]
+		return vivo
 	default:
 		return false
 	}
@@ -209,6 +216,9 @@ func (e *ExecutorSO) Parar(ctx context.Context, s *Servico) error {
 	// Sem processo nosso (subiu em aba do terminal, ou ja estava no ar antes do launcher):
 	// acha quem esta segurando a porta e derruba a arvore.
 	if s.Porta == 0 {
+		if s.Pronto.Tipo == "processo" {
+			return nil // sem processo nosso, este tipo de projeto ja esta parado
+		}
 		return fmt.Errorf("nao sei como parar: sem processo gerenciado e sem porta configurada")
 	}
 	pids := pidsNaPorta(ctx, s.Porta)

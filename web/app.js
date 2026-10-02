@@ -19,7 +19,7 @@ const FORM_VAZIO = () => ({
   composeArquivo: "", composeProjeto: "", composeServico: "", servicosCompose: [],
   container: "", porta: null, url: "",
   prontoTipo: "porta", prontoDetalhe: "", timeout: 120,
-  depende: [], selecionado: true, sugestoes: null,
+  depende: [], selecionado: true, sugestoes: null, erro: "",
 });
 
 createApp({
@@ -88,8 +88,16 @@ createApp({
       if (t.tipo === "servico") return this.form.id ? `editar · ${this.form.nome}` : "novo projeto";
       if (t.tipo === "pasta") return "escolher pasta";
       if (t.tipo === "perfil") return `perfil · ${t.perfil.nome}`;
+      if (t.tipo === "branch") return `trocar de branch · ${t.servico.nome}`;
       if (t.tipo === "confirmar") return "confirmar";
       return t.titulo || "";
+    },
+    // O erro fica dentro do modal, e nao num aviso: aviso some em 6s e o formulario
+    // continuaria parado sem dizer por que.
+    erroModal() {
+      const t = this.topo;
+      if (t.tipo === "servico") return this.form.erro;
+      return t.erro || "";
     },
   },
 
@@ -232,6 +240,63 @@ createApp({
 
     mexidos(g) {
       return (g.preparados || 0) + (g.modificados || 0) + (g.nao_rastreados || 0);
+    },
+
+    // Trocar de branch so com a copia de trabalho limpa. Aqui e so a dica visual do cartao,
+    // que pode estar uns segundos atrasada: quem decide e o servidor, lendo o git na hora.
+    podeTrocarBranch(g) {
+      return !this.mexidos(g) && !g.conflitos;
+    },
+
+    async abrirBranches(s) {
+      this.menuAberto = null;
+      const g = this.git[s.id] || {};
+      this.abrir({
+        tipo: "branch", servico: s, atual: g.branch || "", limpo: true,
+        branches: [], filtro: "", carregando: true, trocando: "", erro: "",
+      });
+      const modal = this.topo; // o proxy reativo, nao o objeto cru que foi empilhado
+      try {
+        const r = await this.pedir(`/api/servicos/${encodeURIComponent(s.id)}/branches`);
+        modal.atual = r.atual;
+        modal.limpo = r.limpo;
+        modal.branches = r.branches || [];
+        if (!r.limpo) modal.erro = "o repositorio tem alteracoes locais - faca commit ou stash antes de trocar de branch.";
+      } catch (err) {
+        modal.erro = err.message;
+      } finally {
+        modal.carregando = false;
+      }
+      this.$nextTick(() => this.$refs.entradaFiltro?.focus());
+    },
+
+    branchesVisiveis(modal) {
+      const filtro = (modal.filtro || "").trim().toLowerCase();
+      return modal.branches.filter((b) => !filtro || b.nome.toLowerCase().includes(filtro));
+    },
+
+    // Enter no filtro troca direto quando sobrou um branch so na lista.
+    trocarUnicoBranch() {
+      const visiveis = this.branchesVisiveis(this.topo);
+      if (visiveis.length === 1) this.trocarBranch(visiveis[0]);
+    },
+
+    async trocarBranch(b) {
+      const modal = this.topo;
+      if (modal.trocando || !modal.limpo || b.nome === modal.atual) return;
+      modal.trocando = b.nome;
+      modal.erro = "";
+      try {
+        const r = await this.enviar(
+          `/api/servicos/${encodeURIComponent(modal.servico.id)}/branch`, { branch: b.nome });
+        this.git = r.git;
+        if (this.topo === modal) this.fecharTopo(true);
+        this.avisar(`${modal.servico.nome} agora esta em ${b.nome}.`, "ok");
+      } catch (err) {
+        modal.erro = err.message;
+      } finally {
+        modal.trocando = "";
+      }
     },
 
     limpoEEmDia(g) {
@@ -581,8 +646,56 @@ createApp({
       this.$nextTick(() => this.$refs.entradaNome?.focus());
     },
 
+    trocarTipo(tipo) {
+      this.form.tipo = tipo;
+      // "processo rodando" so existe para aplicacao: container volta para a checagem padrao.
+      if (tipo === "docker" && this.form.prontoTipo === "processo") this.form.prontoTipo = "porta";
+    },
+
+    aoTrocarChecagem() {
+      // O detalhe de um tipo nao serve para o outro (porta nao e url nem comando).
+      this.form.prontoDetalhe = "";
+      // Na aba do terminal o launcher nao enxerga o processo, entao esta checagem obriga
+      // o modo gerenciado.
+      if (this.form.prontoTipo === "processo") this.form.modo = "gerenciado";
+    },
+
+    ajudaChecagem() {
+      const tipo = this.form.prontoTipo;
+      if (tipo === "processo") return "pronto enquanto o processo estiver de pe - para bot, worker ou script que nao abre porta";
+      if (tipo === "http") return "url que precisa responder (qualquer resposta abaixo de 500 conta)";
+      if (tipo === "comando") return "comando que devolve 0 quando o projeto esta pronto";
+      return "em branco = a porta do projeto";
+    },
+
+    // validarForm devolve o primeiro problema do cadastro apontando o campo. O servidor
+    // valida de novo, mas a mensagem dele fala em nome de campo do config.
+    validarForm() {
+      const f = this.form;
+      if (!(f.nome || "").trim()) return "de um nome ao projeto.";
+      if (f.tipo === "app") {
+        if (!(f.dir || "").trim()) return "escolha a pasta do projeto.";
+        if (!(f.cmd || "").trim()) return "informe o comando que sobe o projeto.";
+      } else {
+        if (!(f.composeArquivo || "").trim()) return "escolha o arquivo compose.";
+        if (!(f.composeProjeto || "").trim()) return "informe o nome do projeto compose.";
+        if (!f.composeServico) return "escolha o servico dentro do compose.";
+      }
+      const c = this.montarChecagem();
+      if (c.tipo === "porta" && !(c.porta > 0 && c.porta <= 65535)) {
+        return f.tipo === "app"
+          ? 'informe a porta do projeto - ou, se ele nao abre porta (bot, worker, script), troque "como saber que ficou pronto" para "processo rodando".'
+          : 'informe a porta do container - ou troque "como saber que ficou pronto" para http ou comando.';
+      }
+      if (c.tipo === "http" && !c.url) return "informe a url da checagem http no detalhe da checagem.";
+      if (c.tipo === "comando" && !c.cmd.length) return "informe o comando da checagem no detalhe da checagem.";
+      return "";
+    },
+
     async salvarServico() {
       const f = this.form;
+      f.erro = this.validarForm();
+      if (f.erro) return;
       const entrada = {
         id: f.id, nome: (f.nome || "").trim(), grupo: f.grupo, tipo: f.tipo,
         porta: Number(f.porta) || 0, url: (f.url || "").trim(),
@@ -617,12 +730,13 @@ createApp({
         this.avisar(f.id ? "projeto atualizado." : `projeto "${entrada.nome}" cadastrado.`, "ok");
         if (conflito) this.avisar(`atencao: a porta ${entrada.porta} ja e usada por ${conflito.nome}.`);
       } catch (err) {
-        this.avisar(err.message, "erro");
+        f.erro = err.message;
       }
     },
 
     montarChecagem() {
       const detalhe = (this.form.prontoDetalhe || "").trim();
+      if (this.form.prontoTipo === "processo") return { tipo: "processo" };
       if (this.form.prontoTipo === "comando") return { tipo: "comando", cmd: detalhe.split(/\s+/).filter(Boolean) };
       if (this.form.prontoTipo === "http") return { tipo: "http", url: detalhe };
       return { tipo: "porta", porta: Number(detalhe) || Number(this.form.porta) || 0 };

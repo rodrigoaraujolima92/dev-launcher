@@ -110,6 +110,15 @@ um so, pelo menu `⋯` do cartao). Sem fetch, o `↓` so reflete o que o reposit
 sabia do remoto - por isso o botao existe em vez de um fetch automatico, que mexeria na
 rede sem pedir.
 
+**Trocar de branch:** clicar no `⎇ branch` do cartao (ou **trocar de branch** no menu `⋯`)
+abre a lista de branches do repositorio, com filtro - Enter troca quando sobra um so. Os
+locais vem primeiro; os que so existem no remoto aparecem marcados (`so em origin`), e
+trocar para um deles cria o local ja acompanhando (`git switch --track`). **So troca com a
+copia de trabalho limpa**: com arquivo mexido, no indice, nao rastreado ou em conflito o
+launcher recusa e pede commit ou stash - nada de carregar alteracao para outro branch sem
+querer. A checagem e feita lendo o git na hora, nao pelo retrato em cache do cartao, e o
+nome so vira argumento do `git switch` se estiver na lista do proprio repositorio.
+
 Sao tres comandos por repositorio (`status --porcelain=v2`, `diff --shortstat` e `log -1`),
 entao o resultado fica em cache por 20s e as pastas sao consultadas em paralelo; projetos
 que apontam para a mesma pasta compartilham uma consulta. A varredura automatica anda num
@@ -180,6 +189,12 @@ renomeia, apaga ou **grava a selecao atual** por cima do perfil.
    dentro do arquivo.
 3. Porta, checagem de "pronto", timeout e dependencias completam o cadastro.
 
+O launcher so adivinha a porta quando ela esta no script (`--port`, vue-cli, vite). Para o
+resto - `go run`, Nest, Maven - informe a porta na mao. Projeto que **nao abre porta** (bot,
+worker, script) usa a checagem **processo rodando**: fica pronto enquanto o processo que o
+launcher iniciou estiver de pe. Se faltar algo, o motivo aparece no proprio formulario,
+acima dos botoes.
+
 Porta repetida nao bloqueia o cadastro, so avisa: como a checagem de "pronto" olha a porta,
 dois projetos na mesma porta se confundem.
 
@@ -247,6 +262,7 @@ Checagens de `pronto`:
 | `porta` | `porta` | padrao - TCP em `127.0.0.1` |
 | `comando` | `cmd` (lista) | quando a porta abre antes do servico servir (ex.: `docker exec db pg_isready -U postgres -q`) |
 | `http` | `url` | health check HTTP; qualquer resposta < 500 conta |
+| `processo` | - | projeto `app` que nao abre porta (bot, worker); so no modo `gerenciado`, porque na aba do terminal o launcher nao enxerga o processo |
 
 Dependencia circular e recusada na hora de salvar, com o caminho do ciclo na mensagem.
 Config da primeira versao (sem `grupos`/`perfis`) e migrado sozinho ao abrir.
@@ -265,6 +281,8 @@ Config da primeira versao (sem `grupos`/`perfis`) e migrado sozinho ao abrir.
 | POST | `/api/abrir` | `{"id": "...", "alvo": "pasta\|editor"}` |
 | GET | `/api/git` | estado do repositorio por projeto (`?forcar=1` ignora o cache) |
 | POST | `/api/git/buscar` | `{"ids": [...]}` (vazio = todos) - `git fetch --prune` |
+| GET | `/api/servicos/{id}/branches` | branch atual, se esta limpo e a lista de branches |
+| POST | `/api/servicos/{id}/branch` | `{"branch": "..."}` - `git switch`, so com a copia de trabalho limpa |
 | GET | `/api/docker` | estado do engine + containers (do config e os de fora rodando) |
 | POST | `/api/docker/abrir` | abre o Docker Desktop e espera o engine (responde na hora) |
 | POST | `/api/docker/containers/{nome}/{start\|stop\|restart}` | acao no container |

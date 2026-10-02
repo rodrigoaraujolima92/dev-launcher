@@ -1,6 +1,8 @@
 package main
 
 import (
+	"context"
+	"os/exec"
 	"reflect"
 	"testing"
 )
@@ -65,6 +67,26 @@ func TestPortaEscutandoNaoAchaPortaLivre(t *testing.T) {
 	// de travar esperando timeout de rede.
 	if portaEscutando(59_123) {
 		t.Skip("alguem esta usando a porta 59123 nesta maquina")
+	}
+}
+
+func TestProntoPorProcessoOlhaQuemOLauncherSegura(t *testing.T) {
+	exe := NovoExecutorSO(t.TempDir(), "", nil)
+	bot := &Servico{ID: "bot", Tipo: TipoApp, Pronto: Checagem{Tipo: "processo"}}
+
+	if exe.Pronto(context.Background(), bot) {
+		t.Fatal("sem processo iniciado pelo launcher, nao esta pronto")
+	}
+	// Projeto sem porta e sem processo nosso ja esta parado: parar nao e erro.
+	if err := exe.Parar(context.Background(), bot); err != nil {
+		t.Fatalf("parar o que nao esta rodando = %v", err)
+	}
+
+	exe.mu.Lock()
+	exe.procs["bot"] = &exec.Cmd{}
+	exe.mu.Unlock()
+	if !exe.Pronto(context.Background(), bot) {
+		t.Fatal("com o processo de pe deveria estar pronto")
 	}
 }
 

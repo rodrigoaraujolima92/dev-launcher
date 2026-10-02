@@ -112,6 +112,47 @@ func TestSalvarServicoRecusaPastaInexistente(t *testing.T) {
 	}
 }
 
+func TestSalvarServicoSemPortaPrecisaDeOutraChecagem(t *testing.T) {
+	raizNav, dentro, _ := pastasTeste(t)
+	cfg := configTeste()
+
+	// E exatamente o que a tela manda quando a porta fica em branco.
+	semPorta := EntradaServico{
+		Nome: "searchBot", Grupo: "api", Tipo: TipoApp, Dir: dentro, Cmd: "go run .",
+		Pronto: Checagem{Tipo: "porta"},
+	}
+	_, err := salvarServico(cfg, semPorta, t.TempDir(), raizNav)
+	if err == nil || !strings.Contains(err.Error(), "processo") {
+		t.Fatalf("a recusa deveria apontar a checagem por processo como saida: %v", err)
+	}
+
+	// Bot nao abre porta: fica pronto enquanto o processo estiver de pe.
+	semPorta.Pronto = Checagem{Tipo: "processo"}
+	id, err := salvarServico(cfg, semPorta, t.TempDir(), raizNav)
+	if err != nil {
+		t.Fatalf("projeto sem porta com checagem por processo deveria entrar: %v", err)
+	}
+	if novo := cfg.porID(id); novo.Porta != 0 || novo.Pronto.Tipo != "processo" || novo.Modo != ModoGerenciado {
+		t.Fatalf("cadastro = %+v", novo)
+	}
+
+	// Na aba do terminal o launcher nao segura o processo, entao nao tem como checar.
+	err = aplicarEdicao(cfg, []EdicaoServico{{ID: id, Selecionado: true, Modo: ModoTerminal}})
+	if err == nil || !strings.Contains(err.Error(), "gerenciado") {
+		t.Fatalf("processo + modo terminal deveria ser recusado: %v", err)
+	}
+	if cfg.porID(id).Modo != ModoGerenciado {
+		t.Fatal("edicao recusada nao pode ter mudado o modo")
+	}
+
+	// Container nao e processo do launcher.
+	docker := cfg.porID("db")
+	docker.Pronto = Checagem{Tipo: "processo"}
+	if err := cfg.validar(); err == nil {
+		t.Fatal("checagem por processo em servico docker deveria ser recusada")
+	}
+}
+
 func TestSalvarServicoEdicaoMantemOID(t *testing.T) {
 	raizNav, dentro, _ := pastasTeste(t)
 	cfg := configTeste()

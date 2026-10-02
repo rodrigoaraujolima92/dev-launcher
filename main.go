@@ -295,6 +295,31 @@ func rotas(g *Gerente, raiz string, encerrar func()) http.Handler {
 		responderJSON(w, http.StatusOK, map[string]any{"buscando": true})
 	})
 
+	mux.HandleFunc("GET /api/servicos/{id}/branches", func(w http.ResponseWriter, r *http.Request) {
+		lista, err := g.BranchesGit(r.Context(), r.PathValue("id"))
+		if err != nil {
+			responderErro(w, http.StatusBadRequest, err)
+			return
+		}
+		responderJSON(w, http.StatusOK, lista)
+	})
+
+	mux.HandleFunc("POST /api/servicos/{id}/branch", func(w http.ResponseWriter, r *http.Request) {
+		var corpo struct {
+			Branch string `json:"branch"`
+		}
+		if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<16)).Decode(&corpo); err != nil {
+			responderErro(w, http.StatusBadRequest, err)
+			return
+		}
+		if err := g.TrocarBranch(r.Context(), r.PathValue("id"), strings.TrimSpace(corpo.Branch)); err != nil {
+			responderErro(w, http.StatusBadRequest, err)
+			return
+		}
+		// Devolve o retrato novo para a tela nao depender do evento chegar.
+		responderJSON(w, http.StatusOK, map[string]any{"git": g.EstadosGit(r.Context(), false)})
+	})
+
 	mux.HandleFunc("GET /api/docker", func(w http.ResponseWriter, r *http.Request) {
 		responderJSON(w, http.StatusOK, g.EstadoDocker(r.Context()))
 	})
