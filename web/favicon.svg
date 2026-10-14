@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <!-- Mesmo selo ambar da marca no topo (.sigla), com um prompt de terminal. -->
+  <defs>
+    <linearGradient id="g" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#ffbb78"/>
+      <stop offset="0.6" stop-color="#f2a65a"/>
+      <stop offset="1" stop-color="#e08a3c"/>
+    </linearGradient>
+  </defs>
+  <rect width="64" height="64" rx="16" fill="url(#g)"/>
+  <path d="M17 20 L31 32 L17 44" fill="none" stroke="#201305" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"/>
+  <rect x="34" y="40" width="15" height="6.5" rx="3.25" fill="#201305"/>
+</svg>
