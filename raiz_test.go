@@ -62,8 +62,8 @@ func TestResolverRaizRelativaUsaAPastaDoConfig(t *testing.T) {
 func TestTornarRelativoMantemOConfigPortavel(t *testing.T) {
 	raiz := filepath.FromSlash("C:/Users/fulano/projetos")
 
-	dentro := filepath.Join(raiz, "appdaturma", "appdaturma-backend")
-	if got := tornarRelativo(raiz, dentro); got != "appdaturma/appdaturma-backend" {
+	dentro := filepath.Join(raiz, "meuapp", "meuapp-backend")
+	if got := tornarRelativo(raiz, dentro); got != "meuapp/meuapp-backend" {
 		t.Fatalf("dentro da raiz = %q, queria caminho relativo com barra normal", got)
 	}
 	// Fora da raiz continua absoluto: virar "../../.." seria pior de ler e de manter.
@@ -72,7 +72,7 @@ func TestTornarRelativoMantemOConfigPortavel(t *testing.T) {
 		t.Fatalf("fora da raiz = %q, queria o absoluto", got)
 	}
 	// Ja relativo so normaliza a barra.
-	if got := tornarRelativo(raiz, filepath.FromSlash("photonow/front")); got != "photonow/front" {
+	if got := tornarRelativo(raiz, filepath.FromSlash("outroapp/front")); got != "outroapp/front" {
 		t.Fatalf("ja relativo = %q", got)
 	}
 	if got := tornarRelativo("", "qualquer"); got != "qualquer" {
@@ -104,12 +104,12 @@ func TestSalvarServicoGuardaCaminhoRelativo(t *testing.T) {
 
 	// O seletor de pastas devolve caminho absoluto; o config tem que guardar relativo.
 	id, err := salvarServico(cfg, EntradaServico{
-		Nome: "cabine", Grupo: "web", Tipo: TipoApp, Dir: dentro, Cmd: "npm run dev", Porta: 5173,
+		Nome: "painel", Grupo: "web", Tipo: TipoApp, Dir: dentro, Cmd: "npm run dev", Porta: 5173,
 	}, raizNav, raizNav)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := cfg.porID(id).Dir; got != "photonow/cabine-foto-front" {
+	if got := cfg.porID(id).Dir; got != "outroapp/painel-front" {
 		t.Fatalf("dir gravado = %q, queria relativo a raiz", got)
 	}
 }
@@ -121,12 +121,12 @@ func TestSalvarServicoGuardaCaminhoRelativo(t *testing.T) {
 // launcherTeste monta a arvore do caso comum e sobe o gerente pelo mesmo caminho do main:
 //
 //	<tmp>/dev-launcher/config.json      (raiz_projetos "..")
-//	<tmp>/photonow/cabine-foto-front
-//	<tmp>/appdaturma/backend
+//	<tmp>/outroapp/painel-front
+//	<tmp>/meuapp/backend
 func launcherTeste(t *testing.T, raizNavegacao string) (g *Gerente, caminhoCfg, base string) {
 	t.Helper()
 	base = t.TempDir()
-	for _, d := range []string{"dev-launcher", "photonow/cabine-foto-front", "appdaturma/backend"} {
+	for _, d := range []string{"dev-launcher", "outroapp/painel-front", "meuapp/backend"} {
 		if err := os.MkdirAll(filepath.Join(base, filepath.FromSlash(d)), 0o755); err != nil {
 			t.Fatal(err)
 		}
@@ -184,7 +184,7 @@ func TestResolverRaizNavegacao(t *testing.T) {
 		t.Fatalf("vazia = %q, queria a propria raiz %q", got, raiz)
 	}
 	// Relativa vale contra a pasta do config, igual a raiz_projetos.
-	if got := resolverRaizNavegacao("../photonow", raiz, cfg); got != filepath.Join(base, "photonow") {
+	if got := resolverRaizNavegacao("../outroapp", raiz, cfg); got != filepath.Join(base, "outroapp") {
 		t.Fatalf("relativa = %q", got)
 	}
 	absoluta := filepath.Join(base, "outra")
@@ -210,7 +210,7 @@ func TestResolverPortaUI(t *testing.T) {
 func TestSalvarConfigNaoEscapaOComando(t *testing.T) {
 	caminho := filepath.Join(t.TempDir(), "config.json")
 	cfg := configTeste()
-	// O comando do appdaturma-backend: o "&" do PowerShell virava & a cada salvamento.
+	// O comando do meuapp-backend: o "&" do PowerShell virava & a cada salvamento.
 	const cmd = "& './run-local.ps1' > saida.log"
 	cfg.porID("api").Cmd = cmd
 	if err := salvarConfig(caminho, cfg); err != nil {
@@ -236,7 +236,7 @@ func TestSalvarConfigNaoEscapaOComando(t *testing.T) {
 func TestClonarConfigNaoPerdeCampo(t *testing.T) {
 	cfg := configTeste()
 	cfg.RaizProjetos = ".."
-	cfg.RaizNavegacao = "../photonow"
+	cfg.RaizNavegacao = "../outroapp"
 	cfg.Perfis = []*Perfil{{ID: "stack", Nome: "stack", Servicos: []string{"db"}}}
 	cfg.PerfilAtivo = "stack"
 
@@ -280,14 +280,14 @@ func TestSalvarPelaTelaPreservaAsRaizesDoConfig(t *testing.T) {
 	// O seletor de pastas manda caminho absoluto, e a cerca continua valendo mesmo com a
 	// raiz de navegacao fora do config.
 	id, err := g.SalvarServico(EntradaServico{
-		Nome: "cabine", Grupo: "web", Tipo: TipoApp, Cmd: "npm run dev", Porta: 5173,
-		Dir: filepath.Join(base, "photonow", "cabine-foto-front"),
+		Nome: "painel", Grupo: "web", Tipo: TipoApp, Cmd: "npm run dev", Porta: 5173,
+		Dir: filepath.Join(base, "outroapp", "painel-front"),
 	})
 	if err != nil {
 		t.Fatalf("cadastro dentro da raiz: %v", err)
 	}
 	conferir("cadastrar")
-	if got := g.Config().porID(id).Dir; got != "photonow/cabine-foto-front" {
+	if got := g.Config().porID(id).Dir; got != "outroapp/painel-front" {
 		t.Fatalf("dir gravado = %q, queria relativo a raiz", got)
 	}
 
@@ -305,26 +305,26 @@ func TestSalvarPelaTelaPreservaAsRaizesDoConfig(t *testing.T) {
 }
 
 func TestRaizNavegacaoRelativaContinuaRelativaNoDisco(t *testing.T) {
-	g, caminhoCfg, base := launcherTeste(t, "../photonow")
-	cerca := filepath.Join(base, "photonow")
+	g, caminhoCfg, base := launcherTeste(t, "../outroapp")
+	cerca := filepath.Join(base, "outroapp")
 
 	// Dentro da raiz de projetos mas fora da cerca: a navegacao relativa foi resolvida.
 	_, err := g.SalvarServico(EntradaServico{
 		Nome: "backend novo", Grupo: "api", Tipo: TipoApp, Cmd: "go run .", Porta: 9001,
-		Dir: filepath.Join(base, "appdaturma", "backend"),
+		Dir: filepath.Join(base, "meuapp", "backend"),
 	})
 	if err == nil || !strings.Contains(err.Error(), "caminho livre") {
 		t.Fatalf("pasta fora da raiz de navegacao deveria ser barrada: %v", err)
 	}
 	if _, err := g.SalvarServico(EntradaServico{
-		Nome: "cabine", Grupo: "web", Tipo: TipoApp, Cmd: "npm run dev", Porta: 5173,
-		Dir: filepath.Join(cerca, "cabine-foto-front"),
+		Nome: "painel", Grupo: "web", Tipo: TipoApp, Cmd: "npm run dev", Porta: 5173,
+		Dir: filepath.Join(cerca, "painel-front"),
 	}); err != nil {
 		t.Fatalf("cadastro dentro da cerca: %v", err)
 	}
 
 	projetos, navegacao, _ := raizesNoDisco(t, caminhoCfg)
-	if projetos != ".." || navegacao != "../photonow" {
+	if projetos != ".." || navegacao != "../outroapp" {
 		t.Fatalf("raizes no disco = %q / %q, queria como foram escritas", projetos, navegacao)
 	}
 

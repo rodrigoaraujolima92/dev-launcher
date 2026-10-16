@@ -159,7 +159,35 @@ func acharConfig(informado string) (string, error) {
 			}
 		}
 	}
-	return "", fmt.Errorf("config.json nao encontrado (use -config)")
+	// Primeira execucao: o config.json e de cada um e nao vem no repositorio. Nasce vazio,
+	// e os projetos entram pela tela.
+	// Ao lado do binario, salvo no "go run": ai o binario mora numa pasta temporaria que
+	// some ao sair, e o config vai para a pasta atual.
+	padrao := candidatos[0]
+	if dentroDe(os.TempDir(), padrao) {
+		padrao = "config.json"
+	}
+	destino, err := filepath.Abs(padrao)
+	if err != nil {
+		return "", err
+	}
+	if err := criarConfigVazio(destino); err != nil {
+		return "", fmt.Errorf("config.json nao encontrado e nao consegui criar %s: %w", destino, err)
+	}
+	fmt.Printf("  config.json criado vazio em %s - cadastre os projetos pela interface.\n", destino)
+	return destino, nil
+}
+
+// criarConfigVazio grava um config sem nenhum projeto, grupo ou rede docker: nada e
+// presumido sobre a maquina de quem esta usando.
+func criarConfigVazio(caminho string) error {
+	return salvarConfig(caminho, &Config{
+		PortaUI:      7010,
+		RaizProjetos: "..",
+		Grupos:       []*Grupo{},
+		Perfis:       []*Perfil{},
+		Servicos:     []*Servico{},
+	})
 }
 
 // somenteLocal barra requisicao que nao venha de localhost. O servidor executa comandos da

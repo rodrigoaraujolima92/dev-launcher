@@ -1,6 +1,8 @@
 package main
 
 import (
+	"errors"
+	"os"
 	"path/filepath"
 	"reflect"
 	"strings"
@@ -13,7 +15,7 @@ import (
 func configTeste() *Config {
 	cfg := &Config{
 		PortaUI:    7010,
-		RedeDocker: "PRODUCTION",
+		RedeDocker: "rede-local",
 		Servicos: []*Servico{
 			{
 				ID: "db", Nome: "Postgres", Grupo: "infra", Tipo: TipoDocker,
@@ -260,25 +262,22 @@ func TestSalvarRecusaConfigInvalido(t *testing.T) {
 	}
 }
 
-func TestCarregarConfigDeVerdade(t *testing.T) {
-	// O config.json que vai para producao tem que passar pela mesma validacao.
-	cfg, err := carregarConfig("config.json")
-	if err != nil {
-		t.Fatalf("config.json do projeto esta invalido: %v", err)
+func TestCarregarConfigLocal(t *testing.T) {
+	// O config.json e de cada um e nao vem no repositorio. Quando existe na maquina, tem
+	// que passar pela mesma validacao que o launcher faz ao subir.
+	if _, err := os.Stat("config.json"); errors.Is(err, os.ErrNotExist) {
+		t.Skip("sem config.json local")
 	}
-	if cfg.porID("backend") == nil || cfg.porID("db") == nil {
-		t.Fatal("config.json deveria ter os servicos backend e db")
-	}
-	if ondas(cfg, expandirDependencias(cfg, []string{"frontend"}))[0][0] != "db" {
-		t.Fatal("o db deveria estar na primeira onda quando se pede o frontend")
+	if _, err := carregarConfig("config.json"); err != nil {
+		t.Fatalf("config.json local esta invalido: %v", err)
 	}
 }
 
 func TestCaminhoAbsoluto(t *testing.T) {
-	raiz := filepath.FromSlash("C:/projetos/appdaturma")
+	raiz := filepath.FromSlash("C:/projetos/meuapp")
 
-	got := caminhoAbsoluto(raiz, "docker appdaturma/docker-compose.yml")
-	querido := filepath.Join(raiz, "docker appdaturma", "docker-compose.yml")
+	got := caminhoAbsoluto(raiz, "docker meuapp/docker-compose.yml")
+	querido := filepath.Join(raiz, "docker meuapp", "docker-compose.yml")
 	if got != querido {
 		t.Fatalf("caminhoAbsoluto = %q, queria %q", got, querido)
 	}

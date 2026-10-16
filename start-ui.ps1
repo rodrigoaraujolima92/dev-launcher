@@ -8,8 +8,6 @@
   em 127.0.0.1 e abre o navegador. Ctrl+C encerra - e derruba junto o que estiver rodando
   em modo gerenciado.
 
-  Para a versao sem interface, use ./start-dev.ps1 (abas do Windows Terminal).
-
 .EXAMPLE
   ./start-ui.ps1
   ./start-ui.ps1 -Porta 7011
@@ -17,7 +15,7 @@
 #>
 [CmdletBinding()]
 param(
-    # Porta da interface (padrao: a do dev-launcher/config.json).
+    # Porta da interface (padrao: a do config.json).
     [int]$Porta,
 
     # Recompila mesmo que o binario esteja atualizado.

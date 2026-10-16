@@ -643,7 +643,7 @@ createApp({
     // grupos
     // ------------------------------------------------------------------
     async novoGrupo() {
-      const nome = await this.pedirTexto("novo grupo", "nome do grupo (ex.: photonow)", "");
+      const nome = await this.pedirTexto("novo grupo", "nome do grupo (ex.: uma empresa ou produto)", "");
       if (!nome) return;
       try {
         const r = await this.enviar("/api/grupos", { nome });

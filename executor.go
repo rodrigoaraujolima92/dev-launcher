@@ -123,8 +123,8 @@ func (e *ExecutorSO) iniciarApp(ctx context.Context, s *Servico) error {
 
 	if s.Modo == ModoTerminal {
 		if comandoExiste("wt") {
-			// -w appdaturma agrupa todas as abas na mesma janela do Windows Terminal.
-			args := []string{"-w", "appdaturma", "new-tab", "--title", s.Nome, "-d", dir,
+			// -w dev-launcher agrupa todas as abas na mesma janela do Windows Terminal.
+			args := []string{"-w", "dev-launcher", "new-tab", "--title", s.Nome, "-d", dir,
 				shell, "-NoExit", "-Command", s.Cmd}
 			e.logar(s.ID, "> wt new-tab %s", s.Nome)
 			// exec.Command, e nao CommandContext: a aba tem que sobreviver ao contexto da

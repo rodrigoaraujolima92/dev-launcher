@@ -25,7 +25,7 @@ services:
      - 7002:8080
 
 networks:
-  PRODUCTION:
+  minha-rede:
     external: true
 `
 	got := servicosDoCompose(conteudo)

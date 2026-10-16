@@ -159,7 +159,7 @@ func TestCadastrarEApagarProjetoPelaAPI(t *testing.T) {
 	h, g := servidorTeste(t, nil)
 	pasta := strings.ReplaceAll(t.TempDir(), `\`, `\\`) // o caminho vai dentro de um JSON
 
-	corpo := `{"nome":"Cabine Foto","grupo":"web","tipo":"app","dir":"` + pasta +
+	corpo := `{"nome":"Painel","grupo":"web","tipo":"app","dir":"` + pasta +
 		`","cmd":"npm run dev","porta":5173,"pronto":{"tipo":"porta","porta":5173}}`
 	resp := chamar(t, h, http.MethodPost, "/api/servicos", corpo)
 	if resp.Code != http.StatusOK {
@@ -171,7 +171,7 @@ func TestCadastrarEApagarProjetoPelaAPI(t *testing.T) {
 	if err := json.Unmarshal(resp.Body.Bytes(), &criado); err != nil {
 		t.Fatal(err)
 	}
-	if criado.ID != "cabine-foto" {
+	if criado.ID != "painel" {
 		t.Fatalf("id = %q", criado.ID)
 	}
 	if g.Config().porID(criado.ID) == nil {
@@ -206,19 +206,19 @@ func TestCadastroInvalidoResponde400(t *testing.T) {
 func TestGruposPelaAPI(t *testing.T) {
 	h, g := servidorTeste(t, nil)
 
-	resp := chamar(t, h, http.MethodPost, "/api/grupos", `{"nome":"Photonow"}`)
+	resp := chamar(t, h, http.MethodPost, "/api/grupos", `{"nome":"OutroApp"}`)
 	if resp.Code != http.StatusOK {
 		t.Fatalf("criar grupo: %d %s", resp.Code, resp.Body)
 	}
-	if g.Config().grupoPorID("photonow") == nil {
+	if g.Config().grupoPorID("outroapp") == nil {
 		t.Fatal("grupo nao foi criado")
 	}
 
-	resp = chamar(t, h, http.MethodPost, "/api/grupos/ordem", `{"ids":["photonow","web"]}`)
+	resp = chamar(t, h, http.MethodPost, "/api/grupos/ordem", `{"ids":["outroapp","web"]}`)
 	if resp.Code != http.StatusOK {
 		t.Fatalf("ordenar: %d %s", resp.Code, resp.Body)
 	}
-	if g.Config().Grupos[0].ID != "photonow" {
+	if g.Config().Grupos[0].ID != "outroapp" {
 		t.Fatalf("ordem = %s", g.Config().Grupos[0].ID)
 	}
 
@@ -226,7 +226,7 @@ func TestGruposPelaAPI(t *testing.T) {
 	if resp := chamar(t, h, http.MethodDelete, "/api/grupos/infra", ""); resp.Code != http.StatusBadRequest {
 		t.Fatalf("apagar grupo cheio deveria dar 400, veio %d", resp.Code)
 	}
-	if resp := chamar(t, h, http.MethodDelete, "/api/grupos/photonow", ""); resp.Code != http.StatusOK {
+	if resp := chamar(t, h, http.MethodDelete, "/api/grupos/outroapp", ""); resp.Code != http.StatusOK {
 		t.Fatalf("apagar grupo vazio: %d %s", resp.Code, resp.Body)
 	}
 }

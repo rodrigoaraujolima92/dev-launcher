@@ -381,7 +381,7 @@ func TestRotaDeLogDoContainer(t *testing.T) {
 
 func TestExecutorGaranteOEngineAntesDeSubirContainer(t *testing.T) {
 	sonda := &dockerFake{erro: errors.New("Docker Desktop nao encontrado")}
-	exe := NovoExecutorSO(t.TempDir(), "PRODUCTION", sonda)
+	exe := NovoExecutorSO(t.TempDir(), "rede-local", sonda)
 
 	var logado []string
 	exe.aoLogar = func(_, linha string) { logado = append(logado, linha) }
@@ -408,7 +408,7 @@ func TestExecutorGaranteOEngineAntesDeSubirContainer(t *testing.T) {
 
 func TestExecutorNaoChamaASondaParaProjetoApp(t *testing.T) {
 	sonda := &dockerFake{}
-	exe := NovoExecutorSO(t.TempDir(), "PRODUCTION", sonda)
+	exe := NovoExecutorSO(t.TempDir(), "rede-local", sonda)
 
 	// Pasta inexistente: o erro sai antes de qualquer coisa de docker.
 	servico := &Servico{ID: "web", Nome: "front", Tipo: TipoApp, Dir: "nao-existe", Cmd: "npm run dev"}

@@ -6,6 +6,11 @@ dev-launcher.exe
 *.log
 tmp/
 
+# Configuracao de cada um: projetos, pastas e rede docker da maquina de quem usa. O
+# launcher cria um config.json vazio na primeira execucao.
+config.json
+start-dev.ps1
+
 # Sobra de escrita atomica do config (salvarConfig grava .tmp e renomeia)
 config.json.tmp
 

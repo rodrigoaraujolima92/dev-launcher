@@ -10,8 +10,10 @@ quem, agrupa por empresa/produto, salva perfis de execucao e acompanha o log de 
 ./start-ui.ps1 -Raiz D:\projetos
 ```
 
-Sem interface, so as abas do Windows Terminal: `./start-dev.ps1` (caminho antigo, especifico
-do appdaturma; quem manda hoje e o launcher).
+O launcher nao vem com projeto nenhum configurado. Na primeira execucao ele cria um
+`config.json` vazio ao lado do binario, e os projetos entram pela tela (**+ novo projeto**).
+Esse arquivo e de cada um e fica fora do Git (`.gitignore`): nome de projeto, pasta, rede
+docker e afins so existem se voce cadastrar.
 
 ## Compilar
 
@@ -45,10 +47,10 @@ ordem:
 Valor relativo e resolvido contra a **pasta do config**, nunca contra o diretorio de
 trabalho - o launcher e chamado por atalho, de qualquer lugar.
 
-E por isso que o config daqui usa `"raiz_projetos": ".."`: com o launcher morando dentro da
+E por isso que o config criado na primeira execucao usa `"raiz_projetos": ".."`: com o launcher morando dentro da
 pasta que guarda os projetos, o mesmo arquivo funciona em qualquer maquina, sem
 `C:\Users\fulano` no meio. Na mesma linha, caminho de projeto **dentro** da raiz e gravado
-relativo (`appdaturma/appdaturma-backend`); so o que esta fora fica absoluto.
+relativo (`meuapp/meuapp-backend`); so o que esta fora fica absoluto.
 
 Quando um caminho nao existe na maquina - config de outra pessoa, raiz errada, projeto ainda
 nao clonado - o launcher avisa no terminal ao subir e marca o cartao com **pasta nao
@@ -186,8 +188,7 @@ ele espera aquela subida em vez de iniciar o mesmo processo duas vezes. `cancela
 
 ## Grupos
 
-As secoes da tela sao editaveis: crie um grupo por empresa ou produto (appdaturma,
-photonow, isugar), renomeie, reordene com as setas e **arraste o cartao** de um grupo para
+As secoes da tela sao editaveis: crie um grupo por empresa ou produto, renomeie, reordene com as setas e **arraste o cartao** de um grupo para
 outro - soltando em cima de outro projeto ele entra na frente dele, soltando no cabecalho
 vai para o fim da secao. Grupo so pode ser apagado quando esta vazio - apagar em cascata
 levaria projeto junto sem querer.
@@ -203,7 +204,7 @@ renomeia, apaga ou **grava a selecao atual** por cima do perfil.
 
 **+ novo projeto** (ou **+ projeto** no cabecalho de um grupo) abre o formulario:
 
-1. **procurar** navega a partir de `C:\Users\Pichau\projetos` e mostra etiquetas
+1. **procurar** navega a partir da pasta de projetos (`raiz_navegacao`, ou a raiz) e mostra etiquetas
    (`GIT`, `NODE`, `GO`, `MAVEN`, `COMPOSE`, `SCRIPT`) para voce reconhecer o projeto.
    Para uma pasta fora dessa raiz, marque **usar caminho fora da pasta de projetos** - a
    cerca e o padrao porque este campo vira diretorio de execucao de um comando.
@@ -227,20 +228,22 @@ dois projetos na mesma porta se confundem.
 | Modo | O que faz |
 | --- | --- |
 | `gerenciado` | O launcher segura o processo. Log ao vivo na tela, botao **parar** funciona direto. Encerrar o launcher derruba estes junto. |
-| `terminal` | Abre uma aba do Windows Terminal (`wt -w appdaturma`), igual ao `start-dev.ps1`. O log fica na aba; parar usa a porta para achar e matar a arvore de processos. |
+| `terminal` | Abre uma aba do Windows Terminal (`wt -w dev-launcher`), todas na mesma janela. O log fica na aba; parar usa a porta para achar e matar a arvore de processos. |
 
 ## config.json
 
-Tudo que a tela edita vai para este arquivo. Campo a campo:
+Tudo que a tela edita vai para este arquivo, que e local (nao vai para o Git). Se ele nao
+existir, o launcher cria um vazio - sem projetos, grupos, perfis nem rede docker. Campo a
+campo (os valores abaixo sao so exemplo):
 
 ```jsonc
 {
   "porta_ui": 7010,
-  "rede_docker": "PRODUCTION",          // criada se nao existir (os compose usam como external)
+  "rede_docker": "minha-rede",          // opcional: criada se nao existir (para compose com rede external)
   "raiz_projetos": "..",                // pasta base; relativa ao proprio config.json
   "raiz_navegacao": "..",               // seletor de pastas; vazio = a raiz
   "grupos": [{ "id": "infra", "nome": "infraestrutura" }],
-  "perfis": [{ "id": "so-apis", "nome": "so as APIs", "servicos": ["db", "permissions"] }],
+  "perfis": [{ "id": "so-apis", "nome": "so as APIs", "servicos": ["db", "backend"] }],
   "perfil_ativo": "so-apis",
   "servicos": [ /* ... */ ]
 }
@@ -249,17 +252,17 @@ Tudo que a tela edita vai para este arquivo. Campo a campo:
 ```jsonc
 {
   "id": "backend",
-  "nome": "appdaturma-backend",
+  "nome": "meuapp-backend",
   "grupo": "api",                  // id de um grupo
   "tipo": "app",                   // app | docker
-  "dir": "appdaturma/appdaturma-backend",  // relativo a raiz, ou absoluto
+  "dir": "meuapp/meuapp-backend",  // relativo a raiz, ou absoluto
   "cmd": "& './run-local.ps1'",    // roda no pwsh, dentro de "dir"
   "porta": 7003,
   "url": "http://localhost:7003",  // vira o link "abrir"
   "pronto": { "tipo": "porta", "porta": 7003 },
   "timeout": 300,                  // segundos ate desistir de esperar
   "modo": "gerenciado",
-  "depende": ["db", "rabbitmq", "mailhog", "permissions"],
+  "depende": ["db"],
   "selecionado": true
 }
 ```
@@ -268,15 +271,15 @@ Servico `docker` troca `dir`/`cmd` por:
 
 ```jsonc
 "compose": {
-  "projeto": "dockerappdaturma",              // mantem o nome de projeto ja usado na maquina
-  "arquivo": "appdaturma/docker appdaturma/docker-compose.yml",
+  "projeto": "meuapp",                        // mantem o nome de projeto ja usado na maquina
+  "arquivo": "meuapp/docker/docker-compose.yml",
   "servico": "db"
 },
 "container": "db"
 ```
 
 O `projeto` importa: e ele que faz o compose reaproveitar os containers existentes
-(`db`, `rabbitmq`, `dockerappdaturma-adminer-1`, `projetos-mailhog-1`) em vez de criar
+(ex.: `meuapp-db-1`) em vez de criar
 duplicatas com outro nome.
 
 Checagens de `pronto`:

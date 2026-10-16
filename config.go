@@ -13,7 +13,7 @@ import (
 
 // Compose descreve como o servico e levantado pelo docker compose.
 // Projeto e obrigatorio e precisa bater com o nome de projeto ja usado na maquina
-// (dockerappdaturma, projetos): e ele que faz o compose reaproveitar o container
+// (em geral o nome da pasta do compose): e ele que faz o compose reaproveitar o container
 // existente em vez de criar um segundo com outro nome.
 type Compose struct {
 	Projeto string `json:"projeto"`
@@ -49,7 +49,7 @@ type Servico struct {
 }
 
 // Grupo e uma secao da tela: serve para separar os projetos por empresa/produto
-// (appdaturma, photonow, isugar) ou por camada (infra, apis). A ordem do array e a
+// ou por camada (infra, apis). A ordem do array e a
 // ordem em que as secoes aparecem.
 type Grupo struct {
 	ID   string `json:"id"`
@@ -85,7 +85,7 @@ const (
 	TipoApp    = "app"
 
 	ModoGerenciado = "gerenciado" // o launcher segura o processo e mostra o log aqui
-	ModoTerminal   = "terminal"   // abre uma aba do Windows Terminal, como o start-dev.ps1
+	ModoTerminal   = "terminal"   // abre uma aba do Windows Terminal, uma aba por projeto
 )
 
 // nomesConhecidos traduz os grupos da primeira versao (quando grupo era so um texto solto
@@ -230,9 +230,6 @@ func (c *Config) validar() error {
 		gruposVistos[g.ID] = true
 	}
 
-	if len(c.Servicos) == 0 {
-		return fmt.Errorf("nenhum servico definido")
-	}
 	vistos := map[string]bool{}
 	for _, s := range c.Servicos {
 		if err := validarServico(s); err != nil {
@@ -572,7 +569,11 @@ func salvarServico(cfg *Config, entrada EntradaServico, raizProjeto, raizNavegac
 		Depende:     limparLista(entrada.Depende),
 		Selecionado: entrada.Selecionado,
 	}
-	if s.Grupo == "" && len(novo.Grupos) > 0 {
+	if s.Grupo == "" {
+		// Config novo ainda nao tem secao nenhuma: o primeiro projeto cria a "geral".
+		if len(novo.Grupos) == 0 {
+			novo.Grupos = append(novo.Grupos, &Grupo{ID: "geral", Nome: "geral"})
+		}
 		s.Grupo = novo.Grupos[0].ID
 	}
 	if s.Timeout == 0 {
@@ -735,10 +736,6 @@ func removerServico(cfg *Config, id string) error {
 	if novo.porID(id) == nil {
 		return fmt.Errorf("servico desconhecido: %s", id)
 	}
-	if len(novo.Servicos) == 1 {
-		return fmt.Errorf("nao da para apagar o unico servico do config")
-	}
-
 	restantes := []*Servico{}
 	for _, s := range novo.Servicos {
 		if s.ID == id {
@@ -1057,8 +1054,8 @@ func resolverPortaUI(daFlag, doConfig int) int {
 }
 
 // tornarRelativo devolve o caminho relativo a raiz quando ele esta dentro dela, com barras
-// normais. E isso que mantem o config portavel: pasta de projeto vira "appdaturma/backend"
-// em vez de "C:\Users\fulano\projetos\appdaturma\backend".
+// normais. E isso que mantem o config portavel: pasta de projeto vira "meuapp/backend"
+// em vez de "C:\Users\fulano\projetos\meuapp\backend".
 func tornarRelativo(raiz, caminho string) string {
 	if raiz == "" || caminho == "" {
 		return caminho
@@ -1090,7 +1087,7 @@ func dentroDe(raiz, caminho string) bool {
 	return !strings.HasPrefix(rel, "..") && !filepath.IsAbs(rel)
 }
 
-// gerarID transforma um nome em identificador estavel (appdaturma-backend), sem acento e
+// gerarID transforma um nome em identificador estavel (meuapp-backend), sem acento e
 // sem espaco, e desempata acrescentando -2, -3 quando ja existe.
 func gerarID(nome string, usados map[string]bool) string {
 	var b strings.Builder

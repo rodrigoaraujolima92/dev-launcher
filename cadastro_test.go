@@ -8,15 +8,15 @@ import (
 	"testing"
 )
 
-// pastasTeste monta uma arvore parecida com C:\Users\Pichau\projetos:
+// pastasTeste monta uma arvore parecida com C:\Users\fulano\projetos:
 //
-//	<tmp>/projetos/photonow/cabine-foto-front   (dentro da cerca)
+//	<tmp>/projetos/outroapp/painel-front   (dentro da cerca)
 //	<tmp>/fora/coisa                            (fora da cerca)
 func pastasTeste(t *testing.T) (raizNavegacao, dentro, fora string) {
 	t.Helper()
 	base := t.TempDir()
 	raizNavegacao = filepath.Join(base, "projetos")
-	dentro = filepath.Join(raizNavegacao, "photonow", "cabine-foto-front")
+	dentro = filepath.Join(raizNavegacao, "outroapp", "painel-front")
 	fora = filepath.Join(base, "fora", "coisa")
 	for _, d := range []string{dentro, fora} {
 		if err := os.MkdirAll(d, 0o755); err != nil {
@@ -31,7 +31,7 @@ func TestSalvarServicoCriaComIDGeradoEDefaults(t *testing.T) {
 	cfg := configTeste()
 
 	id, err := salvarServico(cfg, EntradaServico{
-		Nome:  "Cabine Foto Front",
+		Nome:  "Painel Front",
 		Grupo: "web",
 		Tipo:  TipoApp,
 		Dir:   dentro,
@@ -41,8 +41,8 @@ func TestSalvarServicoCriaComIDGeradoEDefaults(t *testing.T) {
 	if err != nil {
 		t.Fatalf("cadastro valido falhou: %v", err)
 	}
-	if id != "cabine-foto-front" {
-		t.Fatalf("id gerado = %q, queria cabine-foto-front", id)
+	if id != "painel-front" {
+		t.Fatalf("id gerado = %q, queria painel-front", id)
 	}
 
 	novo := cfg.porID(id)
@@ -317,18 +317,18 @@ func TestMoverServicoRecusaAlvoDesconhecido(t *testing.T) {
 func TestSalvarGrupoCriaERenomeia(t *testing.T) {
 	cfg := configTeste()
 
-	id, err := salvarGrupo(cfg, "", "Photonow")
+	id, err := salvarGrupo(cfg, "", "OutroApp")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if id != "photonow" {
+	if id != "outroapp" {
 		t.Fatalf("id do grupo = %q", id)
 	}
 
-	if _, err := salvarGrupo(cfg, id, "PhotoNow Studio"); err != nil {
+	if _, err := salvarGrupo(cfg, id, "OutroApp Studio"); err != nil {
 		t.Fatal(err)
 	}
-	if cfg.grupoPorID(id).Nome != "PhotoNow Studio" {
+	if cfg.grupoPorID(id).Nome != "OutroApp Studio" {
 		t.Fatalf("nome = %q", cfg.grupoPorID(id).Nome)
 	}
 	if _, err := salvarGrupo(cfg, "", "   "); err == nil {
@@ -453,8 +453,8 @@ func TestRemoverPerfilLimpaOAtivo(t *testing.T) {
 
 func TestGerarID(t *testing.T) {
 	casos := []struct{ nome, querido string }{
-		{"AppDaTurma Backend", "appdaturma-backend"},
-		{"Cabine Foto  Gestao", "cabine-foto-gestao"},
+		{"MeuApp Backend", "meuapp-backend"},
+		{"Painel  Gestao", "painel-gestao"},
 		{"Configuração Inicial", "configuracao-inicial"},
 		{"  ---  ", "servico"},
 		{"API 2.0", "api-2-0"},
@@ -472,11 +472,11 @@ func TestGerarID(t *testing.T) {
 }
 
 func TestDentroDe(t *testing.T) {
-	raiz := filepath.FromSlash("C:/Users/Pichau/projetos")
+	raiz := filepath.FromSlash("C:/Users/fulano/projetos")
 	dentro := []string{
-		filepath.FromSlash("C:/Users/Pichau/projetos"),
-		filepath.FromSlash("C:/Users/Pichau/projetos/appdaturma"),
-		filepath.FromSlash("C:/Users/Pichau/projetos/a/b/c"),
+		filepath.FromSlash("C:/Users/fulano/projetos"),
+		filepath.FromSlash("C:/Users/fulano/projetos/meuapp"),
+		filepath.FromSlash("C:/Users/fulano/projetos/a/b/c"),
 	}
 	for _, c := range dentro {
 		if !dentroDe(raiz, c) {
@@ -484,10 +484,10 @@ func TestDentroDe(t *testing.T) {
 		}
 	}
 	fora := []string{
-		filepath.FromSlash("C:/Users/Pichau"),
+		filepath.FromSlash("C:/Users/fulano"),
 		filepath.FromSlash("C:/Windows/System32"),
 		// Nome que so comeca igual nao conta como estar dentro.
-		filepath.FromSlash("C:/Users/Pichau/projetos-antigos/x"),
+		filepath.FromSlash("C:/Users/fulano/projetos-antigos/x"),
 	}
 	for _, c := range fora {
 		if dentroDe(raiz, c) {
@@ -518,5 +518,39 @@ func TestNormalizarCriaGruposDoFormatoAntigo(t *testing.T) {
 	}
 	if cfg.Perfis == nil {
 		t.Fatal("perfis deveria virar lista vazia, nao nil")
+	}
+}
+
+// Primeira execucao: o config nasce sem nada, e tem que dar para cadastrar o primeiro
+// projeto pela tela e apagar o ultimo sem o launcher recusar o arquivo.
+func TestConfigVazioDoComecoAoFim(t *testing.T) {
+	raizNav, dentro, _ := pastasTeste(t)
+	caminho := filepath.Join(t.TempDir(), "config.json")
+	if err := criarConfigVazio(caminho); err != nil {
+		t.Fatalf("criar config vazio: %v", err)
+	}
+	cfg, err := carregarConfig(caminho)
+	if err != nil {
+		t.Fatalf("config vazio nao carregou: %v", err)
+	}
+	if cfg.RedeDocker != "" || len(cfg.Servicos) != 0 || len(cfg.Grupos) != 0 {
+		t.Fatalf("config vazio veio com conteudo: %+v", cfg)
+	}
+
+	id, err := salvarServico(cfg, EntradaServico{
+		Nome: "Primeiro", Tipo: TipoApp, Dir: dentro, Cmd: "npm run dev", Porta: 5173,
+	}, t.TempDir(), raizNav)
+	if err != nil {
+		t.Fatalf("primeiro projeto nao entrou: %v", err)
+	}
+	if g := cfg.porID(id).Grupo; g != "geral" || cfg.grupoPorID(g) == nil {
+		t.Fatalf("primeiro projeto ficou no grupo %q sem a secao existir", g)
+	}
+
+	if err := removerServico(cfg, id); err != nil {
+		t.Fatalf("apagar o ultimo projeto falhou: %v", err)
+	}
+	if err := salvarConfig(caminho, cfg); err != nil {
+		t.Fatalf("salvar config sem projetos: %v", err)
 	}
 }

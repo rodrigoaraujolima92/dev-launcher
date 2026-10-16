@@ -105,7 +105,7 @@ func TestLerShortstat(t *testing.T) {
 }
 
 func TestLerCommit(t *testing.T) {
-	got := lerCommit("840a5a4a\tMerge pull request #92 from app-da-turma/fix\tRodrigo Lima\t30 hours ago\n")
+	got := lerCommit("840a5a4a\tMerge pull request #92 from minha-org/fix\tRodrigo Lima\t30 hours ago\n")
 	if got.Hash != "840a5a4a" || got.Autor != "Rodrigo Lima" || got.Quando != "30 hours ago" {
 		t.Fatalf("commit = %+v", got)
 	}

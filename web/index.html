@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>dev launcher · appdaturma</title>
+<title>dev launcher</title>
 <link rel="icon" href="favicon.svg" type="image/svg+xml">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -24,7 +24,7 @@
 
   <header class="topo">
     <div class="marca">
-      <span class="sigla" aria-hidden="true">ADT</span>
+      <span class="sigla" aria-hidden="true">DL</span>
       <div class="titulo">
         <h1>dev launcher</h1>
         <p>{{ raiz }}</p>
@@ -89,6 +89,11 @@
 
   <main>
     <section class="coluna">
+      <div v-if="raiz && !config.servicos.length && !config.grupos.length" class="sem-resultado">
+        <p>nenhum projeto cadastrado ainda.</p>
+        <button type="button" class="mini destaque" @click="formularioServico(null)">+ novo projeto</button>
+      </div>
+
       <div v-if="nenhumVisivel" class="sem-resultado">
         <p>nenhum projeto bate com o filtro.</p>
         <button type="button" class="mini" @click="limparFiltro">limpar filtro</button>
@@ -421,7 +426,7 @@
         <div v-else-if="topo.tipo === 'servico'" class="campos">
           <div class="campo">
             <span class="rotulo-campo">nome</span>
-            <input type="text" v-model="form.nome" placeholder="appdaturma-backend" ref="entradaNome">
+            <input type="text" v-model="form.nome" placeholder="meu-backend" ref="entradaNome">
           </div>
           <div class="campo">
             <span class="rotulo-campo">grupo</span>
@@ -476,13 +481,13 @@
             <div class="campo largo">
               <span class="rotulo-campo">arquivo compose</span>
               <div class="linha-campo">
-                <input type="text" v-model="form.composeArquivo" placeholder="docker appdaturma/docker-compose.yml">
+                <input type="text" v-model="form.composeArquivo" placeholder="docker/docker-compose.yml">
                 <button type="button" class="mini" @click="escolherPasta('compose')">procurar</button>
               </div>
             </div>
             <div class="campo">
               <span class="rotulo-campo">projeto compose</span>
-              <input type="text" v-model="form.composeProjeto" placeholder="dockerappdaturma">
+              <input type="text" v-model="form.composeProjeto" placeholder="meuprojeto">
               <span class="ajuda">mantenha o nome ja usado na maquina</span>
             </div>
             <div class="campo">

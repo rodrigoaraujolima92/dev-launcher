@@ -1,3 +1,3 @@
-module appdaturma/dev-launcher
+module dev-launcher
 
 go 1.26
