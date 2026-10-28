@@ -7,7 +7,6 @@ import (
 	"path/filepath"
 	"regexp"
 	"sort"
-	"strconv"
 	"strings"
 )
 
@@ -116,6 +115,8 @@ type Sugestao struct {
 	Rotulo string `json:"rotulo"`
 	Cmd    string `json:"cmd"`
 	Porta  int    `json:"porta,omitempty"`
+	// preferido marca o script que tem cara de "sobe o projeto" (run-local.ps1, start.bat).
+	preferido bool
 }
 
 type ArquivoCompose struct {
@@ -138,40 +139,12 @@ func inspecionar(dir string) (*Inspecao, error) {
 	}
 
 	insp := &Inspecao{Caminho: dir, Sugestoes: []Sugestao{}, Composes: []ArquivoCompose{}}
-	nomes := map[string]bool{}
-	for _, e := range entradas {
-		nomes[strings.ToLower(e.Name())] = true
-	}
 
-	if nomes["package.json"] {
-		if dados, err := os.ReadFile(filepath.Join(dir, "package.json")); err == nil {
-			insp.Sugestoes = append(insp.Sugestoes, sugestoesDoPackageJSON(dados)...)
-		}
-	}
-	if nomes["go.mod"] {
-		alvo := "."
-		if _, err := os.Stat(filepath.Join(dir, "cmd", "api")); err == nil {
-			alvo = "./cmd/api"
-		}
-		insp.Sugestoes = append(insp.Sugestoes, Sugestao{Rotulo: "go run " + alvo, Cmd: "go run " + alvo})
-		if nomes[".air.toml"] {
-			insp.Sugestoes = append(insp.Sugestoes, Sugestao{Rotulo: "air (hot reload)", Cmd: "air"})
-		}
-	}
-	if nomes["pom.xml"] {
-		insp.Sugestoes = append(insp.Sugestoes, Sugestao{Rotulo: "mvn spring-boot:run", Cmd: "mvn spring-boot:run"})
-	}
-
-	// Script solto na raiz do projeto: e o caso do run-local.ps1 do backend.
-	for _, e := range entradas {
-		nome := e.Name()
-		if e.IsDir() || !strings.HasSuffix(strings.ToLower(nome), ".ps1") {
-			continue
-		}
-		insp.Sugestoes = append(insp.Sugestoes, Sugestao{
-			Rotulo: nome,
-			Cmd:    fmt.Sprintf("& './%s'", nome),
-		})
+	// Mesmo detector da importacao por pasta, sem o filtro de "tem certeza que roda": aqui a
+	// pessoa ja escolheu a pasta, entao qualquer palpite ajuda.
+	insp.Sugestoes = append(insp.Sugestoes, detectarApp(dir, nomesDaPasta(entradas)).Sugestoes...)
+	if c := nomesDaPasta(entradas); c.tem("go.mod") && len(sugestoesGo(dir, c, 0)) == 0 {
+		insp.Sugestoes = append(insp.Sugestoes, Sugestao{Rotulo: "go run .", Cmd: "go run ."})
 	}
 
 	for _, e := range entradas {
@@ -200,29 +173,11 @@ var reScript = regexp.MustCompile(`--port[= ](\d{2,5})`)
 // sugestoesDoPackageJSON pega os scripts que costumam subir a aplicacao e tenta adivinhar
 // a porta a partir de um --port no proprio script.
 func sugestoesDoPackageJSON(dados []byte) []Sugestao {
-	var pacote struct {
-		Scripts map[string]string `json:"scripts"`
-	}
-	if err := json.Unmarshal(dados, &pacote); err != nil {
+	var teste map[string]any
+	if json.Unmarshal(dados, &teste) != nil {
 		return nil
 	}
-	interessantes := []string{"dev", "serve", "start", "host"}
-	out := []Sugestao{}
-	for _, nome := range interessantes {
-		script, ok := pacote.Scripts[nome]
-		if !ok {
-			continue
-		}
-		s := Sugestao{Rotulo: "npm run " + nome, Cmd: "npm run " + nome}
-		if achado := reScript.FindStringSubmatch(script); len(achado) == 2 {
-			s.Porta, _ = strconv.Atoi(achado[1])
-		} else if strings.Contains(script, "vue-cli-service serve") {
-			s.Porta = 8080
-		} else if strings.Contains(script, "vite") {
-			s.Porta = 5173
-		}
-		out = append(out, s)
-	}
+	_, out := sugestoesNode("", dados, "npm", 0)
 	return out
 }
 

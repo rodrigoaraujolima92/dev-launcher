@@ -60,15 +60,21 @@
 
   <nav class="barra-perfis">
     <span class="rotulo-barra">perfis</span>
-    <div class="perfis">
-      <span v-if="!config.perfis.length" class="dica">nenhum perfil salvo ainda</span>
+    <!-- Perfil e uma visao: clicar mostra so os projetos dele (ja marcados). TODOS mostra
+         tudo que esta cadastrado. -->
+    <div class="perfis" role="group" aria-label="perfis">
+      <div class="perfil todos" :class="{ ativo: !config.perfil_ativo }" title="todos os projetos cadastrados">
+        <button type="button" class="aplicar" :aria-pressed="!config.perfil_ativo ? 'true' : 'false'" @click="aplicarPerfil(null)">TODOS</button>
+        <span class="qtd">{{ config.servicos.length }}</span>
+      </div>
       <div v-for="p in config.perfis" :key="p.id" class="perfil"
            :class="{ ativo: config.perfil_ativo === p.id }"
            :title="p.servicos.map(nomeDe).join(', ')">
-        <button type="button" class="aplicar" @click="aplicarPerfil(p)">{{ p.nome }}</button>
+        <button type="button" class="aplicar" :aria-pressed="config.perfil_ativo === p.id ? 'true' : 'false'" @click="aplicarPerfil(p)">{{ p.nome }}</button>
         <span class="qtd">{{ p.servicos.length }}</span>
-        <button type="button" class="editar-perfil" title="editar perfil" @click="abrir({ tipo: 'perfil', perfil: p })">⋯</button>
+        <button type="button" class="editar-perfil" title="editar perfil" :aria-label="'editar perfil ' + p.nome" @click="editarPerfil(p)">⋯</button>
       </div>
+      <button type="button" class="novo-perfil" title="criar um perfil escolhendo os projetos" @click="editarPerfil(null)">+ perfil</button>
     </div>
     <label class="busca">
       <input type="search" v-model="filtro" ref="busca" placeholder="filtrar projetos"
@@ -81,22 +87,29 @@
               title="git fetch --prune em todos os projetos">
         {{ buscandoGit ? 'buscando...' : 'git fetch' }}
       </button>
-      <button class="mini" type="button" @click="salvarPerfilAtual">salvar selecao como perfil</button>
       <button class="mini" type="button" @click="novoGrupo">novo grupo</button>
-      <button class="mini destaque" type="button" @click="formularioServico(null)">+ novo projeto</button>
+      <button class="mini destaque" type="button" title="escolha uma pasta: o launcher descobre os projetos e como rodar cada um"
+              @click="abrirImportar()">+ adicionar projetos</button>
     </div>
   </nav>
 
   <main>
     <section class="coluna">
       <div v-if="raiz && !config.servicos.length && !config.grupos.length" class="sem-resultado">
-        <p>nenhum projeto cadastrado ainda.</p>
-        <button type="button" class="mini destaque" @click="formularioServico(null)">+ novo projeto</button>
+        <p>nenhum projeto cadastrado ainda. escolha uma pasta e o launcher descobre os projetos e como rodar cada um.</p>
+        <button type="button" class="mini destaque" @click="abrirImportar()">+ adicionar projetos</button>
       </div>
 
       <div v-if="nenhumVisivel" class="sem-resultado">
-        <p>nenhum projeto bate com o filtro.</p>
-        <button type="button" class="mini" @click="limparFiltro">limpar filtro</button>
+        <template v-if="filtrando">
+          <p>nenhum projeto bate com o filtro.</p>
+          <button type="button" class="mini" @click="limparFiltro">limpar filtro</button>
+        </template>
+        <template v-else>
+          <p>o perfil {{ perfilAtivo.nome }} nao tem projetos.</p>
+          <button type="button" class="mini" @click="editarPerfil(perfilAtivo)">editar perfil</button>
+          <button type="button" class="mini" @click="aplicarPerfil(null)">ver todos</button>
+        </template>
       </div>
 
       <template v-for="grupo in gruposVisiveis" :key="grupo.id">
@@ -112,7 +125,7 @@
             {{ noArDe(grupo.id) }}/{{ todosDe(grupo.id).length }} no ar
           </span>
           <div class="acoes-grupo">
-            <button type="button" @click="formularioServico(null, grupo.id)">+ projeto</button>
+            <button type="button" @click="abrirImportar(grupo.id)">+ projeto</button>
             <button type="button" @click="subir(idsDoGrupo(grupo.id))">subir</button>
             <button type="button" @click="parar(idsDoGrupo(grupo.id))">parar</button>
             <button type="button" @click="reiniciar(idsDoGrupo(grupo.id))">reiniciar</button>
@@ -375,7 +388,7 @@
   <!-- ---------------- modais ---------------- -->
   <div class="modal" v-if="modais.length">
     <div class="modal-fundo" @click="fecharPeloFundo"></div>
-    <div class="modal-caixa" :class="{ larga: topo.tipo === 'git' }" role="dialog" aria-modal="true">
+    <div class="modal-caixa" :class="{ larga: topo.tipo === 'git', media: topo.tipo === 'importar' }" role="dialog" aria-modal="true">
       <header class="modal-topo">
         <h2>{{ tituloModal }}</h2>
         <button type="button" class="mini" @click="fecharTopo()" aria-label="fechar">esc</button>
@@ -390,10 +403,131 @@
 
         <p v-else-if="topo.tipo === 'confirmar'" class="ajuda">{{ topo.texto }}</p>
 
-        <p v-else-if="topo.tipo === 'perfil'" class="ajuda">
-          {{ topo.perfil.servicos.length }} projeto(s):
-          {{ topo.perfil.servicos.map(nomeDe).join(', ') }}
-        </p>
+        <!-- editor de perfil: nome + projetos marcados, por grupo -->
+        <template v-else-if="topo.tipo === 'perfil'">
+          <div class="campo largo">
+            <label class="rotulo-campo" for="nome-perfil">nome do perfil</label>
+            <input id="nome-perfil" type="text" v-model="topo.nome" ref="entradaPerfil" placeholder="ex.: so as APIs, loja completa"
+                   @keydown.enter="salvarPerfilEditor">
+          </div>
+          <div class="perfil-topo">
+            <span class="rotulo-campo">projetos do perfil <b>{{ topo.marcados.length }}</b></span>
+            <button type="button" class="link" @click="topo.marcados = [...selecionados]" title="marca os que estao selecionados na tela agora">usar a selecao atual</button>
+            <button type="button" class="link" @click="topo.marcados = []">limpar</button>
+          </div>
+          <div class="perfil-lista">
+            <template v-for="g in config.grupos" :key="g.id">
+              <div v-if="config.servicos.some((s) => s.grupo === g.id)" class="perfil-grupo">
+                <label class="perfil-grupo-titulo">
+                  <input type="checkbox" :checked="marcadosNoGrupo(topo, g.id) === config.servicos.filter((s) => s.grupo === g.id).length"
+                         :indeterminate.prop="marcadosNoGrupo(topo, g.id) > 0 && marcadosNoGrupo(topo, g.id) < config.servicos.filter((s) => s.grupo === g.id).length"
+                         @change="alternarGrupoNoPerfil(topo, g.id)">
+                  {{ g.nome }}
+                </label>
+                <label v-for="s in config.servicos.filter((s) => s.grupo === g.id)" :key="s.id" class="perfil-item">
+                  <input type="checkbox" :value="s.id" v-model="topo.marcados">
+                  <span>{{ s.nome }}</span>
+                  <span class="fraco mono" v-if="s.porta">:{{ s.porta }}</span>
+                </label>
+              </div>
+            </template>
+          </div>
+          <p class="nota-modal">abrir um perfil mostra so os projetos dele na tela, ja marcados para subir. TODOS mostra tudo.</p>
+        </template>
+
+        <!-- adicionar projetos: escolher a pasta -->
+        <template v-else-if="topo.tipo === 'importar' && topo.etapa === 'pasta'">
+          <p class="ajuda importar-ajuda">
+            escolha a pasta de um projeto - ou a pasta de cima, para achar varios de uma vez (front, back, docker-compose...).
+            o launcher olha os arquivos (package.json, go.mod, pom.xml, .csproj, requirements.txt, docker-compose...) e propoe como rodar cada um.
+          </p>
+          <div class="trilha"><span class="rotulo-trilha">pasta:</span> <b>{{ topo.pasta.caminho || '...' }}</b></div>
+          <div class="lista-pastas">
+            <button v-if="topo.pasta.pai && (topo.livre || topo.pasta.caminho !== topo.pasta.raiz)"
+                    type="button" class="item-pasta acima" @click="navegarImportar(topo, topo.pasta.pai)">
+              <span class="nome-pasta">.. subir um nivel</span>
+            </button>
+            <div v-for="item in topo.pasta.itens" :key="item.caminho" class="item-pasta com-acao" @click="navegarImportar(topo, item.caminho)">
+              <span class="nome-pasta">{{ item.nome }}</span>
+              <span class="marcas"><span v-for="m in item.marcas" :key="m" class="marca">{{ m }}</span></span>
+              <button type="button" class="mini" :disabled="topo.carregando" title="procurar projetos nesta pasta"
+                      @click.stop="procurarProjetos(topo, item.caminho)">procurar aqui</button>
+            </div>
+          </div>
+          <label class="opcao-livre importar-livre">
+            <input type="checkbox" v-model="topo.livre" @change="navegarImportar(topo, topo.pasta.caminho)">
+            navegar fora da pasta de projetos
+          </label>
+        </template>
+
+        <!-- adicionar projetos: o que foi encontrado -->
+        <template v-else-if="topo.tipo === 'importar'">
+          <div class="importar-topo">
+            <span class="trilha"><b>{{ topo.resultado.caminho }}</b></span>
+            <button type="button" class="link" @click="topo.etapa = 'pasta'; topo.erro = ''">trocar pasta</button>
+            <span class="espaco"></span>
+            <span class="fraco">{{ topo.linhas.length }} encontrado(s)</span>
+            <button type="button" class="link" @click="marcarTodasLinhas(topo, true)">marcar todos</button>
+            <button type="button" class="link" @click="marcarTodasLinhas(topo, false)">desmarcar</button>
+          </div>
+          <p v-if="topo.resultado.cortado" class="nota-modal">pasta muito grande: a busca parou no meio. escolha uma pasta mais especifica para ver o resto.</p>
+
+          <div class="importar-lista">
+            <div v-for="l in topo.linhas" :key="l.chave" class="importar-linha" :class="{ desmarcada: !l.marcado, cadastrada: l.cadastrado }">
+              <input type="checkbox" v-model="l.marcado" :aria-label="'adicionar ' + l.nome">
+              <div class="il-corpo">
+                <div class="il-titulo">
+                  <input type="text" v-model="l.nome" class="il-nome" aria-label="nome do projeto" :disabled="!l.marcado">
+                  <span class="chip-tec" :class="'tec-' + l.tecnologia">{{ rotuloTecnologia(l.tecnologia) }}</span>
+                  <span class="il-pasta mono" :title="l.dir">{{ l.relativo === '.' ? '(esta pasta)' : l.relativo }}</span>
+                  <span v-if="l.cadastrado" class="chip-git aviso" :title="'ja cadastrado como ' + nomeDoCadastrado(l.cadastrado)">ja cadastrado</span>
+                </div>
+                <div class="il-campos">
+                  <template v-if="l.tipo === 'app'">
+                    <label class="il-cmd">
+                      <span>comando</span>
+                      <input type="text" v-model="l.cmd" :list="'cmds-' + l.chave" :disabled="!l.marcado" class="mono" aria-label="comando que sobe o projeto">
+                      <datalist :id="'cmds-' + l.chave">
+                        <option v-for="c in l.comandos || []" :key="c.cmd" :value="c.cmd">{{ c.rotulo }}</option>
+                      </datalist>
+                    </label>
+                  </template>
+                  <template v-else>
+                    <span class="il-compose mono" :title="l.compose.arquivo">
+                      compose · {{ l.compose.servico }}<template v-if="l.imagem"> ({{ l.imagem }})</template> · container {{ l.container }}
+                    </span>
+                  </template>
+                  <label class="il-porta">
+                    <span>porta</span>
+                    <input type="number" v-model="l.porta" min="1" max="65535" :disabled="!l.marcado" class="mono" placeholder="-" aria-label="porta">
+                  </label>
+                </div>
+                <div class="il-dica" v-if="l.marcado && (portaEmUso(l) || !l.porta)">
+                  <span v-if="portaEmUso(l)" class="aviso-txt">a porta {{ l.porta }} ja e usada por {{ portaEmUso(l) }}.</span>
+                  <span v-else-if="l.tipo === 'app'">sem porta: o launcher considera pronto enquanto o processo estiver rodando.</span>
+                  <span v-else>sem porta publicada: pronto quando o container estiver rodando.</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="importar-opcoes">
+            <label class="il-grupo">
+              <span>grupo</span>
+              <select v-model="topo.grupo" aria-label="grupo dos projetos">
+                <option v-for="g in config.grupos" :key="g.id" :value="g.id">{{ g.nome }}</option>
+                <option value="__novo">novo grupo...</option>
+              </select>
+              <input v-if="topo.grupo === '__novo'" type="text" v-model="topo.grupoNovo" placeholder="nome do grupo" aria-label="nome do grupo novo">
+            </label>
+            <label v-if="perfilAtivo" class="opcao-livre">
+              <input type="checkbox" v-model="topo.noPerfil"> incluir no perfil {{ perfilAtivo.nome }}
+            </label>
+            <label v-if="temAppEContainer(topo)" class="opcao-livre" title="cada app so sobe depois que os containers marcados estiverem no ar">
+              <input type="checkbox" v-model="topo.esperar"> os apps esperam os containers subirem
+            </label>
+          </div>
+        </template>
 
         <!-- troca de branch -->
         <template v-else-if="topo.tipo === 'branch'">
@@ -583,6 +717,7 @@
                   <div class="l-titulo">
                     <span class="mono">{{ b.nome }}</span>
                     <span v-if="b.atual" class="chip-git ref">atual</span>
+                    <span v-if="b.principal" class="chip-git" title="branch principal: o painel nao deixa apagar">principal</span>
                     <span v-if="b.remoto" class="chip-git" title="ainda nao existe local: trocar cria o local acompanhando o remoto">so em {{ b.remoto }}</span>
                     <span v-if="b.sumiu" class="chip-git ruim" title="o branch remoto foi apagado (PR mergeado?)">remoto apagado</span>
                     <span v-else-if="!b.remoto && !b.upstream" class="chip-git">so local</span>
@@ -596,7 +731,7 @@
                   <button v-if="!b.atual" type="button" class="mini" :disabled="!!topo.ocupado" @click="trocarParaBranch(topo, b)">trocar</button>
                   <button v-if="!b.atual" type="button" class="mini" :disabled="!!topo.ocupado" title="git merge deste branch no atual (pede confirmacao)"
                           @click="mergeBranch(topo, b)">merge no atual</button>
-                  <button v-if="!b.atual && !b.remoto" type="button" class="mini perigo" :disabled="!!topo.ocupado" title="apagar o branch local (pede confirmacao)"
+                  <button v-if="!b.atual && !b.remoto && !b.principal" type="button" class="mini perigo" :disabled="!!topo.ocupado" title="apagar o branch local (pede confirmacao)"
                           @click="apagarBranch(topo, b)">apagar</button>
                 </div>
               </div>
@@ -819,8 +954,9 @@
 
       <footer class="modal-acoes">
         <button v-if="topo.tipo === 'servico' && form.id" type="button" class="botao perigo esquerda" @click="apagarServico">apagar</button>
-        <button v-if="topo.tipo === 'perfil'" type="button" class="botao perigo esquerda" @click="apagarPerfil(topo.perfil)">apagar</button>
-        <button v-if="topo.tipo === 'perfil'" type="button" class="botao" @click="renomearPerfil(topo.perfil)">renomear</button>
+        <button v-if="topo.tipo === 'perfil' && topo.perfil" type="button" class="botao perigo esquerda" @click="apagarPerfil(topo.perfil)">apagar</button>
+        <button v-if="topo.tipo === 'importar'" type="button" class="botao discreto-neutro esquerda" title="cadastrar preenchendo tudo a mao"
+                @click="cadastroManual">cadastro manual</button>
 
         <button type="button" class="botao" @click="fecharTopo()">{{ topo.tipo === 'branch' || topo.tipo === 'git' ? 'fechar' : 'cancelar' }}</button>
 
@@ -828,13 +964,18 @@
         <button v-else-if="topo.tipo === 'confirmar'" type="button" class="botao primario perigo" @click="topo.resolver(true); fecharTopo(true)">{{ topo.botao || 'confirmar' }}</button>
         <button v-else-if="topo.tipo === 'pasta'" type="button" class="botao primario" @click="usarPasta">usar esta pasta</button>
         <button v-else-if="topo.tipo === 'servico'" type="button" class="botao primario" @click="salvarServico">salvar</button>
-        <button v-else-if="topo.tipo === 'perfil'" type="button" class="botao primario" @click="gravarPerfilAtual(topo.perfil)">gravar selecao atual</button>
+        <button v-else-if="topo.tipo === 'perfil'" type="button" class="botao primario" @click="salvarPerfilEditor">salvar perfil</button>
+        <button v-else-if="topo.tipo === 'importar' && topo.etapa === 'pasta'" type="button" class="botao primario"
+                :disabled="topo.carregando || !topo.pasta.caminho" @click="procurarProjetos(topo)">{{ topo.carregando ? 'procurando...' : 'procurar projetos aqui' }}</button>
+        <button v-else-if="topo.tipo === 'importar'" type="button" class="botao primario" :disabled="topo.salvando || !linhasMarcadas(topo).length"
+                @click="importarProjetos">{{ topo.salvando ? 'adicionando...' : 'adicionar ' + linhasMarcadas(topo).length + ' projeto(s)' }}</button>
       </footer>
     </div>
   </div>
 </div>
 
 <script src="vendor/vue.global.prod.js"></script>
+<script src="vendor/highlight.min.js"></script>
 <script src="app.js"></script>
 </body>
 </html>

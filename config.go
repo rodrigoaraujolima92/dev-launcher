@@ -546,6 +546,9 @@ type EntradaServico struct {
 	Depende      []string `json:"depende"`
 	Selecionado  bool     `json:"selecionado"`
 	CaminhoLivre bool     `json:"caminho_livre,omitempty"`
+	// Perfil: projeto novo cadastrado com um perfil aberto entra nele tambem - senao some da
+	// tela assim que e salvo, porque a tela so mostra os projetos do perfil.
+	Perfil string `json:"perfil,omitempty"`
 }
 
 // salvarServico cria (ID vazio) ou substitui um servico. Devolve o id gravado.
@@ -606,6 +609,13 @@ func salvarServico(cfg *Config, entrada EntradaServico, raizProjeto, raizNavegac
 		}
 		s.ID = gerarID(s.Nome, usados)
 		novo.Servicos = append(novo.Servicos, s)
+		if entrada.Perfil != "" {
+			p := novo.perfilPorID(entrada.Perfil)
+			if p == nil {
+				return "", fmt.Errorf("perfil desconhecido: %s", entrada.Perfil)
+			}
+			p.Servicos = append(p.Servicos, s.ID)
+		}
 	} else {
 		anterior := novo.porID(entrada.ID)
 		if anterior == nil {
@@ -867,7 +877,9 @@ func salvarPerfil(cfg *Config, id, nome string, servicos []string) (string, erro
 
 	var p *Perfil
 	if id == "" {
-		usados := map[string]bool{}
+		// "todos" e o perfil fixo da tela (todos os projetos): nenhum perfil salvo pode ter
+		// esse id.
+		usados := map[string]bool{PerfilTodos: true}
 		for _, existente := range novo.Perfis {
 			usados[existente.ID] = true
 		}
@@ -881,7 +893,10 @@ func salvarPerfil(cfg *Config, id, nome string, servicos []string) (string, erro
 	}
 	p.Nome = nome
 	p.Servicos = lista
+	// Salvar abre o perfil: a tela passa a mostrar so os projetos dele, entao a selecao tem
+	// que ser a dele - projeto marcado e escondido subiria sem ninguem ver.
 	novo.PerfilAtivo = p.ID
+	marcarSoOsDoPerfil(novo, p)
 
 	if err := novo.validar(); err != nil {
 		return "", err
@@ -912,26 +927,40 @@ func removerPerfil(cfg *Config, id string) error {
 	return nil
 }
 
-// aplicarPerfil marca exatamente os servicos do perfil e desmarca o resto.
+// PerfilTodos e o perfil fixo que mostra todos os projetos cadastrados. Nao fica salvo na
+// lista de perfis: no config ele e o PerfilAtivo vazio.
+const PerfilTodos = "todos"
+
+// aplicarPerfil abre um perfil: a tela passa a mostrar so os projetos dele, e a selecao vira
+// exatamente esses. "todos" volta a mostrar tudo e nao mexe na selecao.
 func aplicarPerfil(cfg *Config, id string) error {
 	novo := clonarConfig(cfg)
+	if id == PerfilTodos || id == "" {
+		novo.PerfilAtivo = ""
+		*cfg = *novo
+		return nil
+	}
 	p := novo.perfilPorID(id)
 	if p == nil {
 		return fmt.Errorf("perfil desconhecido: %s", id)
 	}
-	doPerfil := map[string]bool{}
-	for _, sid := range p.Servicos {
-		doPerfil[sid] = true
-	}
-	for _, s := range novo.Servicos {
-		s.Selecionado = doPerfil[s.ID]
-	}
+	marcarSoOsDoPerfil(novo, p)
 	novo.PerfilAtivo = id
 	if err := novo.validar(); err != nil {
 		return err
 	}
 	*cfg = *novo
 	return nil
+}
+
+func marcarSoOsDoPerfil(cfg *Config, p *Perfil) {
+	doPerfil := map[string]bool{}
+	for _, sid := range p.Servicos {
+		doPerfil[sid] = true
+	}
+	for _, s := range cfg.Servicos {
+		s.Selecionado = doPerfil[s.ID]
+	}
 }
 
 // ------------------------------------------------------------------

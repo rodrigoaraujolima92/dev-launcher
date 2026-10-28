@@ -431,7 +431,7 @@ func TestEncerrarSoAceitaLocalhost(t *testing.T) {
 
 func TestInterfaceEstaEmbutidaNoBinario(t *testing.T) {
 	h, _ := servidorTeste(t, nil)
-	for _, caminho := range []string{"/", "/style.css", "/app.js", "/vendor/vue.global.prod.js"} {
+	for _, caminho := range []string{"/", "/style.css", "/app.js", "/vendor/vue.global.prod.js", "/vendor/highlight.min.js"} {
 		resp := chamar(t, h, http.MethodGet, caminho, "")
 		if resp.Code != http.StatusOK {
 			t.Fatalf("%s deveria ser servido pelo binario, veio %d", caminho, resp.Code)

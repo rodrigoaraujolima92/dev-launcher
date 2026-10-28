@@ -66,9 +66,11 @@ type BranchInfo struct {
 	Frente   int    `json:"frente,omitempty"`
 	Atras    int    `json:"atras,omitempty"`
 	Sumiu    bool   `json:"sumiu,omitempty"` // o upstream foi apagado no remoto
-	Hash     string `json:"hash"`
-	Resumo   string `json:"resumo"`
-	Quando   string `json:"quando"`
+	// Principal: main, master ou o branch padrao de algum remoto. O painel nunca apaga.
+	Principal bool   `json:"principal,omitempty"`
+	Hash      string `json:"hash"`
+	Resumo    string `json:"resumo"`
+	Quando    string `json:"quando"`
 }
 
 // PRGit e um pull request aberto, como o GitHub CLI devolve.
@@ -435,7 +437,7 @@ func diffArquivoGit(ctx context.Context, raiz string, a ArquivoGit, preparado bo
 // existem em algum remoto.
 func branchesInfoGit(ctx context.Context, raiz string) ([]BranchInfo, error) {
 	saida, err := git(ctx, 20*time.Second, raiz, "for-each-ref", "--sort=-committerdate",
-		"--format=%(refname)%1f%(upstream:short)%1f%(upstream:track)%1f%(committerdate:relative)%1f%(subject)%1f%(objectname:short)%1f%(HEAD)",
+		"--format=%(refname)%1f%(upstream:short)%1f%(upstream:track)%1f%(committerdate:relative)%1f%(subject)%1f%(objectname:short)%1f%(HEAD)%1f%(symref)",
 		"refs/heads", "refs/remotes")
 	if err != nil {
 		return nil, err
@@ -445,6 +447,7 @@ func branchesInfoGit(ctx context.Context, raiz string) ([]BranchInfo, error) {
 
 func lerBranchesInfo(saida string) []BranchInfo {
 	locais, remotos := []BranchInfo{}, []BranchInfo{}
+	principais := map[string]bool{"main": true, "master": true}
 	for _, linha := range strings.Split(saida, "\n") {
 		campos := strings.Split(strings.TrimRight(linha, "\r"), "\x1f")
 		if len(campos) < 7 {
@@ -466,7 +469,16 @@ func lerBranchesInfo(saida string) []BranchInfo {
 			locais = append(locais, b)
 		} else if resto, ok := strings.CutPrefix(b.Ref, "refs/remotes/"); ok {
 			remoto, nome, ok := strings.Cut(resto, "/")
-			if !ok || nome == "" || nome == "HEAD" {
+			if !ok || nome == "" {
+				continue
+			}
+			if nome == "HEAD" {
+				// refs/remotes/origin/HEAD aponta para o branch padrao do remoto.
+				if len(campos) > 7 {
+					if padrao, ok := strings.CutPrefix(campos[7], "refs/remotes/"+remoto+"/"); ok && padrao != "" {
+						principais[padrao] = true
+					}
+				}
 				continue
 			}
 			b.Nome, b.Remoto = nome, remoto
@@ -482,6 +494,9 @@ func lerBranchesInfo(saida string) []BranchInfo {
 			locais = append(locais, b)
 			tem[b.Nome] = true
 		}
+	}
+	for i := range locais {
+		locais[i].Principal = principais[locais[i].Nome]
 	}
 	return locais
 }
@@ -859,8 +874,12 @@ func executarAcaoGit(ctx context.Context, raiz, acao string, p PedidoGit) (strin
 		if err != nil {
 			return "", err
 		}
+		// Regra fixa, sem "forcar": o painel nunca apaga branch principal nem branch remoto.
+		if b.Principal {
+			return "", fmt.Errorf("%s e um branch principal - o painel nunca apaga branch principal", b.Nome)
+		}
 		if b.Remoto != "" {
-			return "", fmt.Errorf("%s so existe em %s - o painel nao apaga branch remoto", b.Nome, b.Remoto)
+			return "", fmt.Errorf("%s so existe em %s - o painel nunca apaga branch remoto", b.Nome, b.Remoto)
 		}
 		if b.Atual {
 			return "", fmt.Errorf("%s e o branch atual - troque de branch antes de apagar", b.Nome)

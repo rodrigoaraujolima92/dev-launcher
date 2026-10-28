@@ -77,6 +77,77 @@ func TestLerBranchesInfo(t *testing.T) {
 	}
 }
 
+func TestLerBranchesInfoPrincipal(t *testing.T) {
+	// O padrao do remoto (origin/HEAD -> develop) e main/master contam como principal.
+	saida := strings.Join([]string{
+		"refs/heads/develop\x1forigin/develop\x1f\x1f1 hour ago\x1fa\x1faaa\x1f*\x1f",
+		"refs/heads/main\x1f\x1f\x1f1 day ago\x1fb\x1fbbb\x1f \x1f",
+		"refs/heads/feat/y\x1f\x1f\x1f1 day ago\x1fc\x1fccc\x1f \x1f",
+		"refs/remotes/origin/HEAD\x1f\x1f\x1f1 hour ago\x1fa\x1faaa\x1f \x1frefs/remotes/origin/develop",
+		"refs/remotes/origin/develop\x1f\x1f\x1f1 hour ago\x1fa\x1faaa\x1f \x1f",
+		"refs/remotes/origin/master\x1f\x1f\x1f1 week ago\x1fd\x1fddd\x1f \x1f",
+	}, "\n")
+	principal := map[string]bool{}
+	for _, b := range lerBranchesInfo(saida) {
+		principal[b.Nome] = b.Principal
+	}
+	want := map[string]bool{"develop": true, "main": true, "master": true, "feat/y": false}
+	for nome, p := range want {
+		if got, ok := principal[nome]; !ok || got != p {
+			t.Fatalf("%s: principal = %v (presente %v), queria %v", nome, got, ok, p)
+		}
+	}
+}
+
+func TestPainelGitNuncaApagaPrincipalNemRemoto(t *testing.T) {
+	g, dir, remoto := gerenteComRepo(t)
+	ctx := context.Background()
+
+	// O remoto ganha um branch "develop" que vira o padrao dele, e um branch de feature.
+	outro := t.TempDir()
+	rodar(t, outro, "clone", "-q", remoto, ".")
+	rodar(t, outro, "push", "-q", "origin", "main:develop", "main:feat/remota")
+	rodar(t, remoto, "symbolic-ref", "HEAD", "refs/heads/develop")
+	rodar(t, dir, "fetch", "-q", "origin")
+	rodar(t, dir, "remote", "set-head", "origin", "--auto")
+	rodar(t, dir, "branch", "-q", "develop", "origin/develop")
+	rodar(t, dir, "switch", "-q", "-c", "feat/local")
+
+	lista, err := g.BranchesInfoGit(ctx, "api")
+	if err != nil {
+		t.Fatal(err)
+	}
+	principal := map[string]bool{}
+	for _, b := range lista {
+		principal[b.Nome] = b.Principal
+	}
+	if !principal["main"] || !principal["develop"] || principal["feat/local"] || principal["feat/remota"] {
+		t.Fatalf("marca de principal errada: %+v", lista)
+	}
+
+	// Principal nao sai nem forcando.
+	for _, nome := range []string{"main", "develop"} {
+		for _, forcar := range []bool{false, true} {
+			_, _, err := g.AcaoGit(ctx, "api", "apagar-branch", PedidoGit{Nome: nome, Forcar: forcar})
+			if err == nil || !strings.Contains(err.Error(), "principal") {
+				t.Fatalf("apagar %s (forcar=%v) deveria ser recusado: %v", nome, forcar, err)
+			}
+		}
+		rodar(t, dir, "rev-parse", "--verify", "-q", "refs/heads/"+nome)
+	}
+
+	// Branch que so existe no remoto tambem nao, nem forcando.
+	for _, forcar := range []bool{false, true} {
+		_, _, err := g.AcaoGit(ctx, "api", "apagar-branch", PedidoGit{Nome: "feat/remota", Forcar: forcar})
+		if err == nil || !strings.Contains(err.Error(), "remoto") {
+			t.Fatalf("apagar branch remoto (forcar=%v) deveria ser recusado: %v", forcar, err)
+		}
+	}
+	if got := rodar(t, remoto, "branch", "--list", "feat/remota", "develop", "main"); len(strings.Split(got, "\n")) != 3 {
+		t.Fatalf("o remoto perdeu branch: %q", got)
+	}
+}
+
 func TestLerPRs(t *testing.T) {
 	saida := `[
 	 {"number":12,"title":"Login novo","author":{"login":"ana"},"headRefName":"feat/login","baseRefName":"main",

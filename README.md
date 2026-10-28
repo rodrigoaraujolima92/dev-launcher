@@ -11,7 +11,7 @@ quem, agrupa por empresa/produto, salva perfis de execucao e acompanha o log de 
 ```
 
 O launcher nao vem com projeto nenhum configurado. Na primeira execucao ele cria um
-`config.json` vazio ao lado do binario, e os projetos entram pela tela (**+ novo projeto**).
+`config.json` vazio ao lado do binario, e os projetos entram pela tela (**+ adicionar projetos**).
 Esse arquivo e de cada um e fica fora do Git (`.gitignore`): nome de projeto, pasta, rede
 docker e afins so existem se voce cadastrar.
 
@@ -80,6 +80,9 @@ despejar o erro de bind.
   binario (nada de CDN: funciona offline). A tela e reativa, entao uma acao repinta so o que
   mudou em vez de redesenhar a lista inteira - trocar de aba do log ou marcar um projeto nao
   recria os cartoes. Para atualizar o Vue, troque o arquivo em `web/vendor/`.
+- **Cor de sintaxe no diff** com `web/vendor/highlight.min.js` (highlight.js 11.11.1, pacote
+  `common` + `powershell` e `dockerfile` concatenados no mesmo arquivo). As cores ficam no
+  `style.css`, nao no tema do highlight.js.
 - **Escuta apenas em `127.0.0.1`** e recusa requisicao cujo `Host` nao seja localhost.
   O servidor executa comandos da maquina, entao nada de expor na rede.
 - **Esperar de verdade.** Um servico so entra na fila do proximo quando fica *pronto*
@@ -134,6 +137,10 @@ nunca forca). Abas:
   `+`/`−` preparam ou tiram da preparacao, `↶` descarta. Embaixo, a mensagem e os botoes
   **commit** e **commit e push** (`ctrl+enter` faz o commit). A mensagem fica guardada se o
   painel for fechado sem commitar.
+  O diff (aqui e no historico) sai com **cor de sintaxe** pela extensao do arquivo (Go,
+  JS/TS, Vue/HTML, CSS, Python, JSON, YAML, SQL, Bash, PowerShell, Dockerfile, C#, Java...).
+  Cada lado de um trecho e colorido inteiro, entao comentario e string de varias linhas
+  saem certos; extensao desconhecida fica sem cor.
 - **historico** - os ultimos 80 commits do branch atual, de outro branch ou de todos, com
   refs, merges e o que ainda **nao foi enviado**; clicar mostra o commit inteiro (`git show`).
 - **branches** - locais (mais recentes primeiro) e os que so existem no remoto, com ultimo
@@ -254,33 +261,62 @@ levaria projeto junto sem querer.
 
 ## Perfis de execucao
 
-Um perfil e uma stack salva: marque os projetos que quer naquele contexto e clique em
-**salvar selecao como perfil** ("stack completa", "so as APIs", "front + backend").
-Clicar no perfil marca exatamente aqueles projetos e desmarca o resto; o `⋯` do chip
-renomeia, apaga ou **grava a selecao atual** por cima do perfil.
+Um perfil e uma visao da tela: o conjunto de projetos que voce usa junto num contexto
+("loja completa", "so as APIs", "front + backend").
 
-## Cadastrar um projeto pela tela
+- **TODOS** (fixo, primeiro da barra) mostra todos os projetos cadastrados e nao mexe na
+  selecao.
+- **Clicar num perfil** mostra **so os projetos dele** - cartoes, grupos e contadores - e ja
+  deixa esses projetos marcados para **subir selecionados**. Grupo sem projeto do perfil
+  some da tela.
+- **+ perfil** abre o editor: nome e a lista de projetos por grupo, com caixa para marcar o
+  grupo inteiro e o atalho **usar a selecao atual**. O `⋯` de um perfil abre o mesmo editor
+  para renomear, trocar os projetos ou apagar (apagar pede confirmacao e nao mexe nos
+  projetos).
+- Projeto adicionado com um perfil aberto entra nele tambem (na importacao da para
+  desmarcar), senao sumiria da tela logo depois de cadastrado.
 
-**+ novo projeto** (ou **+ projeto** no cabecalho de um grupo) abre o formulario:
+## Adicionar projetos a partir de uma pasta
 
-1. **procurar** navega a partir da pasta de projetos (`raiz_navegacao`, ou a raiz) e mostra etiquetas
-   (`GIT`, `NODE`, `GO`, `MAVEN`, `COMPOSE`, `SCRIPT`) para voce reconhecer o projeto.
-   Para uma pasta fora dessa raiz, marque **usar caminho fora da pasta de projetos** - a
-   cerca e o padrao porque este campo vira diretorio de execucao de um comando.
-2. Escolhida a pasta, o launcher sugere como rodar: scripts do `package.json` (com a porta
-   lida do `--port` do proprio script), `go run ./cmd/api`, `air`, `mvn spring-boot:run` e
-   qualquer `.ps1` na raiz do projeto - e para `docker-compose*.yml` lista os servicos de
-   dentro do arquivo.
-3. Porta, checagem de "pronto", timeout e dependencias completam o cadastro.
+**+ adicionar projetos** (ou **+ projeto** no cabecalho de um grupo) abre o assistente:
 
-O launcher so adivinha a porta quando ela esta no script (`--port`, vue-cli, vite). Para o
-resto - `go run`, Nest, Maven - informe a porta na mao. Projeto que **nao abre porta** (bot,
-worker, script) usa a checagem **processo rodando**: fica pronto enquanto o processo que o
-launcher iniciou estiver de pe. Se faltar algo, o motivo aparece no proprio formulario,
-acima dos botoes.
+1. Navegue ate a pasta de um projeto - ou ate a pasta de cima, para pegar varios de uma vez
+   (front, back, docker-compose de um mesmo sistema, ou todos os repositorios de uma
+   empresa) - e clique em **procurar projetos aqui** (ou **procurar aqui** na linha de uma
+   subpasta). Para uma pasta fora da pasta de projetos, marque **navegar fora da pasta de
+   projetos**.
+2. O launcher varre a pasta e as subpastas (ate 4 niveis, pulando `node_modules`, `vendor`,
+   `target`, `dist`, `bin`...) e, para cada sistema que reconhece, propoe nome, comando e
+   porta. **Nada e executado**: e tudo leitura de arquivo.
 
-Porta repetida nao bloqueia o cadastro, so avisa: os dois nao sobem juntos, e a tela diz
-qual deles esta com a porta (veja "Dois projetos na mesma porta").
+   | o que tem na pasta | comando sugerido | de onde vem a porta |
+   |---|---|---|
+   | `package.json` | `npm/yarn/pnpm/bun` + `dev`, `serve`, `start`... (pelo lockfile) | `--port` do script, `vite.config`, `angular.json`, `.env`, padrao do framework |
+   | `go.mod` | `go run .` e um `go run ./cmd/x` por programa; `air` com `.air.toml` | `.env` ou `":8080"` no codigo |
+   | `pom.xml` / `build.gradle` | `spring-boot:run` / `bootRun` (com `mvnw`/`gradlew` quando houver), `quarkus:dev` | `server.port` do `application*.properties/yml`, ou 8080 |
+   | `*.csproj` (web/worker/exe) | `dotnet run`, `dotnet watch` | `Properties/launchSettings.json` (prefere a url http) |
+   | `manage.py`, FastAPI, Flask, Streamlit | `runserver`, `uvicorn`, `flask run`... (usa o `.venv` se existir) | `.env` ou o padrao |
+   | `artisan`, `bin/rails`, `Cargo.toml` | `php artisan serve`, `rails server`, `cargo run` | `.env` ou o padrao |
+   | `run*.ps1`, `start*.bat`... | o proprio script - passa na frente dos outros comandos | herda a do projeto |
+   | `docker-compose*.yml` / `compose*.yml` | um item por servico | primeira porta publicada (`ports`, inclusive `${VAR:-5432}` e sintaxe longa) |
+
+   Biblioteca (Go sem `main`, `.csproj` de classes, `pom.xml` pai de multi-modulo) nao entra.
+   O que ja esta cadastrado aparece desmarcado com **ja cadastrado**.
+3. Confira a lista: nome, comando (o campo oferece as outras sugestoes) e porta sao
+   editaveis, e a tela avisa porta ja usada por outro projeto. Escolha o grupo - com varios
+   sistemas, o padrao e um **grupo novo** com o nome da pasta - e, se houver apps e containers
+   juntos, deixe **os apps esperam os containers subirem** para eles so arrancarem com o
+   banco/fila no ar. **adicionar N projeto(s)** cadastra todos de uma vez: se um falhar,
+   nenhum entra e o erro diz qual foi.
+
+Sem porta, o app fica pronto enquanto o processo estiver de pe (checagem **processo
+rodando**); container sem porta publicada fica pronto quando esta rodando (`docker top`).
+
+**cadastro manual** (no rodape do assistente) abre o formulario completo, para o que a
+descoberta nao cobre. O mesmo formulario edita um projeto ja cadastrado (`⋯` > editar
+projeto); o **procurar** dele usa o mesmo detector para sugerir o comando. Porta repetida
+nao bloqueia o cadastro, so avisa: os dois nao sobem juntos, e a tela diz qual deles esta
+com a porta (veja "Dois projetos na mesma porta").
 
 ## Modos de execucao (servicos `app`)
 
@@ -383,7 +419,9 @@ Config da primeira versao (sem `grupos`/`perfis`) e migrado sozinho ao abrir.
 | GET | `/api/docker/containers/{nome}/logs?linhas=300` | ultimas linhas do container |
 | POST | `/api/encerrar` | encerra o proprio launcher |
 | POST/DELETE | `/api/grupos` · `/api/grupos/ordem` · `/api/grupos/{id}` | grupos |
-| POST/DELETE | `/api/perfis` · `/api/perfis/{id}/aplicar` · `/api/perfis/{id}` | perfis |
+| POST/DELETE | `/api/perfis` · `/api/perfis/{id}/aplicar` · `/api/perfis/{id}` | perfis (`todos/aplicar` volta para o TODOS) |
+| GET | `/api/descobrir?caminho=...` | projetos encontrados na pasta e subpastas, com comando e porta sugeridos |
+| POST | `/api/importar` | `{"grupo", "grupo_novo", "perfil", "esperar_containers", "projetos": [...]}` - cadastra todos ou nenhum |
 | GET | `/api/pastas` · `/api/inspecionar` | seletor de pastas e sugestoes (`?livre=1` sai da cerca) |
 
 ## Testes

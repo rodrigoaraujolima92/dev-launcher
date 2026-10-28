@@ -49,11 +49,89 @@ const FORM_VAZIO = () => ({
 // Acima disso o navegador sofre para desenhar: o resto do diff fica para o terminal.
 const MAX_LINHAS_DIFF = 6000;
 
+// ---- cor de sintaxe (highlight.js, servido de vendor/highlight.min.js) ----
+
+// Extensao que o highlight.js nao reconhece sozinho como alias. O resto ele resolve: js, ts,
+// tsx, go, py, rb, rs, cs, java, php, sql, yml, json, md, sh, ps1, css, scss, html, xml...
+const LINGUAGEM_POR_EXT = {
+  vue: "xml", svelte: "xml", htm: "xml", svg: "xml", csproj: "xml", props: "xml", config: "xml",
+  mjs: "javascript", cjs: "javascript", jsonc: "json", json5: "json",
+  toml: "ini", env: "bash", h: "c", hpp: "cpp",
+};
+
+// linguagemDo escolhe a linguagem pelo nome do arquivo. Sem certeza, fica sem cor: adivinhar
+// pelo conteudo (highlightAuto) e lento e erra bastante em trecho solto de diff.
+function linguagemDo(caminho) {
+  if (typeof hljs === "undefined" || !caminho) return null;
+  const nome = caminho.split("/").pop().toLowerCase();
+  if (nome === "dockerfile" || nome.startsWith("dockerfile.") || nome.endsWith(".dockerfile")) return "dockerfile";
+  if (nome === "makefile") return "makefile";
+  if (nome === ".env" || nome.startsWith(".env.")) return "bash";
+  const ponto = nome.lastIndexOf(".");
+  if (ponto < 0) return null;
+  const ext = nome.slice(ponto + 1);
+  const lang = LINGUAGEM_POR_EXT[ext] || ext;
+  return hljs.getLanguage(lang) ? lang : null;
+}
+
+function escaparHtml(s) {
+  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+
+// quebrarHtml divide o HTML do highlight.js em uma string por linha. Um token pode atravessar
+// linhas (comentario de bloco, string longa): o span e fechado no fim da linha e reaberto na
+// seguinte, para cada linha do diff ficar com HTML completo.
+function quebrarHtml(html) {
+  const linhas = [], abertos = [];
+  let atual = "";
+  for (const [p] of html.matchAll(/<span[^>]*>|<\/span>|\n|[^<\n]+/g)) {
+    if (p === "\n") {
+      linhas.push(atual + "</span>".repeat(abertos.length));
+      atual = abertos.join("");
+    } else {
+      if (p === "</span>") abertos.pop();
+      else if (p.startsWith("<span")) abertos.push(p);
+      atual += p;
+    }
+  }
+  linhas.push(atual + "</span>".repeat(abertos.length));
+  return linhas;
+}
+
+// colorir pinta um lado (antigo ou novo) de um trecho do diff de uma vez so, e nao linha a
+// linha: assim o highlight.js ve o comentario ou a string inteira e nao se perde no meio.
+function colorir(itens, indices, lang) {
+  if (!indices.length) return;
+  let html;
+  try {
+    html = hljs.highlight(indices.map((i) => itens[i].t).join("\n"), { language: lang, ignoreIllegals: true }).value;
+  } catch {
+    return; // fica o texto escapado que ja esta no item
+  }
+  const partes = quebrarHtml(html);
+  if (partes.length !== indices.length) return;
+  indices.forEach((i, k) => { itens[i].h = partes[k]; });
+}
+
 // lerDiff transforma a saida do "git diff"/"git show" em linhas com classe e numero da linha
-// no arquivo antigo e no novo, lidos dos cabecalhos "@@ -a,b +c,d @@".
+// no arquivo antigo e no novo, lidos dos cabecalhos "@@ -a,b +c,d @@". Linha de codigo sai
+// com o sinal (m) separado do texto (t) e o texto ja em HTML (h), com cor quando a
+// linguagem do arquivo e conhecida.
 function lerDiff(texto) {
   const itens = [];
   let velho = 0, novo = 0, dentro = false, sobrou = false;
+  let lang = null, ladoVelho = [], ladoNovo = [];
+  // Fecha o trecho atual: pinta o lado antigo (contexto + removidas) e o novo (contexto +
+  // adicionadas). O contexto fica com a cor do lado novo.
+  const fecharTrecho = () => {
+    if (lang) { colorir(itens, ladoVelho, lang); colorir(itens, ladoNovo, lang); }
+    ladoVelho = []; ladoNovo = [];
+  };
+  const codigo = (c, linha, v, n) => {
+    const t = linha.slice(1);
+    itens.push({ c, m: linha[0] || " ", t, h: escaparHtml(t), cor: !!lang, v, n });
+    return itens.length - 1;
+  };
   const linhas = (texto || "").split("\n");
   if (linhas.length && linhas[linhas.length - 1] === "") linhas.pop();
   for (let linha of linhas) {
@@ -61,23 +139,29 @@ function lerDiff(texto) {
     if (linha.endsWith("\r")) linha = linha.slice(0, -1);
     const hunk = /^@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@/.exec(linha);
     if (hunk) {
+      fecharTrecho();
       velho = +hunk[1]; novo = +hunk[2]; dentro = true;
       itens.push({ c: "hunk", t: linha, v: "", n: "" });
     } else if (linha.startsWith("diff --git") || linha.startsWith("diff --cc")) {
+      fecharTrecho();
       dentro = false;
-      itens.push({ c: "arquivo", t: linha.replace(/^diff --git a\/(.*) b\/.*$/, "$1"), v: "", n: "" });
+      const caminho = linha.replace(/^diff --git a\/(.*) b\/.*$/, "$1").replace(/^diff --cc /, "");
+      lang = linguagemDo(caminho);
+      itens.push({ c: "arquivo", t: caminho, v: "", n: "" });
     } else if (!dentro && /^(index |--- |\+\+\+ )/.test(linha)) {
       continue; // cabecalho tecnico: o nome do arquivo ja aparece na linha de cima
     } else if (!dentro || linha.startsWith("\\")) {
       itens.push({ c: "meta", t: linha, v: "", n: "" });
     } else if (linha.startsWith("+")) {
-      itens.push({ c: "add", t: linha, v: "", n: novo++ });
+      ladoNovo.push(codigo("add", linha, "", novo++));
     } else if (linha.startsWith("-")) {
-      itens.push({ c: "del", t: linha, v: velho++, n: "" });
+      ladoVelho.push(codigo("del", linha, velho++, ""));
     } else {
-      itens.push({ c: "ctx", t: linha, v: velho++, n: novo++ });
+      const i = codigo("ctx", linha, velho++, novo++);
+      ladoVelho.push(i); ladoNovo.push(i);
     }
   }
+  fecharTrecho();
   // Congelado: o Vue nao precisa vigiar milhares de linhas que nunca mudam.
   return Object.freeze({ itens: Object.freeze(itens), sobrou });
 }
@@ -93,7 +177,10 @@ const VisorDiff = {
     <div class="visor-diff">
       <div v-if="!texto" class="diff-vazio">{{ vazio }}</div>
       <template v-else>
-        <div v-for="(l, i) in linhas.itens" :key="i" class="dl" :class="l.c"><span class="nv">{{ l.v }}</span><span class="nn">{{ l.n }}</span><span class="tx">{{ l.t }}</span></div>
+        <template v-for="(l, i) in linhas.itens" :key="i">
+          <div v-if="l.h !== undefined" class="dl" :class="[l.c, { cor: l.cor }]"><span class="nv">{{ l.v }}</span><span class="nn">{{ l.n }}</span><span class="mk">{{ l.m }}</span><span class="tx" v-html="l.h"></span></div>
+          <div v-else class="dl" :class="l.c"><span class="nv">{{ l.v }}</span><span class="nn">{{ l.n }}</span><span class="tx">{{ l.t }}</span></div>
+        </template>
         <div v-if="linhas.sobrou || cortado" class="diff-corte">diff grande demais - mostrando so o comeco.</div>
       </template>
     </div>`,
@@ -156,8 +243,19 @@ createApp({
     },
     contagem() {
       const c = { pronto: 0, andando: 0, falha: 0, parado: 0 };
-      for (const s of this.config.servicos) c[this.familia(this.estado(s.id).status)]++;
+      for (const s of this.servicosNoPerfil) c[this.familia(this.estado(s.id).status)]++;
       return c;
+    },
+    // Perfil aberto e uma visao: a tela inteira (cartoes, grupos, contadores) passa a mostrar
+    // so os projetos dele. Sem perfil aberto, e o TODOS.
+    perfilAtivo() {
+      return this.config.perfis.find((p) => p.id === this.config.perfil_ativo) || null;
+    },
+    servicosNoPerfil() {
+      const p = this.perfilAtivo;
+      if (!p) return this.config.servicos;
+      const ids = new Set(p.servicos);
+      return this.config.servicos.filter((s) => ids.has(s.id));
     },
     subindo() {
       return this.contagem.andando > 0;
@@ -167,11 +265,11 @@ createApp({
     },
     // Com filtro ligado, grupo sem nenhum cartao que bata some da tela.
     gruposVisiveis() {
-      if (!this.filtrando) return this.config.grupos;
+      if (!this.filtrando && !this.perfilAtivo) return this.config.grupos;
       return this.config.grupos.filter((g) => this.servicosDe(g.id).length);
     },
     nenhumVisivel() {
-      return this.filtrando && !this.config.servicos.some(this.passaNoFiltro);
+      return (this.filtrando || !!this.perfilAtivo) && !this.config.servicos.some(this.passaNoFiltro);
     },
     topo() {
       return this.modais[this.modais.length - 1] || {};
@@ -194,7 +292,8 @@ createApp({
       const t = this.topo;
       if (t.tipo === "servico") return this.form.id ? `editar · ${this.form.nome}` : "novo projeto";
       if (t.tipo === "pasta") return "escolher pasta";
-      if (t.tipo === "perfil") return `perfil · ${t.perfil.nome}`;
+      if (t.tipo === "perfil") return t.perfil ? `perfil · ${t.perfil.nome}` : "novo perfil";
+      if (t.tipo === "importar") return t.etapa === "resultado" ? `adicionar projetos · ${t.resultado.nome}` : "adicionar projetos";
       if (t.tipo === "branch") return `trocar de branch · ${t.servico.nome}`;
       if (t.tipo === "git") return `git · ${t.servico.nome}`;
       if (t.tipo === "confirmar") return t.titulo || "confirmar";
@@ -317,6 +416,7 @@ createApp({
       return this.config.servicos.find((s) => s.id === id);
     },
     passaNoFiltro(s) {
+      if (!this.noPerfil(s)) return false;
       const texto = this.filtro.trim().toLowerCase();
       if (texto && !`${s.nome} ${s.dir || ""} ${s.porta || ""}`.toLowerCase().includes(texto)) return false;
       if (this.filtroStatus && this.familia(this.estado(s.id).status) !== this.filtroStatus) return false;
@@ -327,7 +427,10 @@ createApp({
       return this.config.servicos.filter((s) => s.grupo === grupo && this.passaNoFiltro(s));
     },
     todosDe(grupo) {
-      return this.config.servicos.filter((s) => s.grupo === grupo);
+      return this.config.servicos.filter((s) => s.grupo === grupo && this.noPerfil(s));
+    },
+    noPerfil(s) {
+      return !this.perfilAtivo || this.perfilAtivo.servicos.includes(s.id);
     },
     noArDe(grupo) {
       return this.todosDe(grupo).filter((s) => this.estado(s.id).status === "pronto").length;
@@ -1200,52 +1303,55 @@ createApp({
     // ------------------------------------------------------------------
     // perfis
     // ------------------------------------------------------------------
+    // Abrir um perfil: a tela mostra so os projetos dele, ja marcados. "todos" volta a
+    // mostrar tudo sem mexer na selecao.
     async aplicarPerfil(p) {
+      const id = p ? p.id : "todos";
       try {
-        const r = await this.enviar(`/api/perfis/${encodeURIComponent(p.id)}/aplicar`);
+        const r = await this.enviar(`/api/perfis/${encodeURIComponent(id)}/aplicar`);
         this.config = r.config;
         this.atualizarPlano();
-        this.avisar(`perfil "${p.nome}": ${p.servicos.length} projeto(s) marcados.`, "ok");
       } catch (err) {
         this.avisar(err.message, "erro");
       }
     },
-    async salvarPerfilAtual() {
-      if (!this.selecionados.length) return this.avisar("marque os projetos do perfil antes de salvar.", "erro");
-      const nome = await this.pedirTexto("salvar perfil", "nome do perfil", "");
-      if (!nome) return;
-      try {
-        const r = await this.enviar("/api/perfis", { nome, servicos: this.selecionados });
-        this.config = r.config;
-        this.avisar(`perfil "${nome}" salvo com ${this.selecionados.length} projeto(s).`, "ok");
-      } catch (err) {
-        this.avisar(err.message, "erro");
-      }
+
+    // editarPerfil abre o editor: nome e a lista de projetos para marcar. Perfil novo comeca
+    // com o que esta selecionado agora.
+    editarPerfil(p) {
+      this.abrir({
+        tipo: "perfil", perfil: p, erro: "",
+        nome: p ? p.nome : "",
+        marcados: p ? [...p.servicos] : [...this.selecionados],
+      });
+      this.$nextTick(() => this.$refs.entradaPerfil?.focus());
     },
-    async gravarPerfilAtual(p) {
-      if (!this.selecionados.length) return this.avisar("nenhum projeto marcado.", "erro");
+    alternarGrupoNoPerfil(m, grupo) {
+      const ids = this.config.servicos.filter((s) => s.grupo === grupo).map((s) => s.id);
+      const todos = ids.every((id) => m.marcados.includes(id));
+      m.marcados = todos ? m.marcados.filter((id) => !ids.includes(id)) : [...new Set([...m.marcados, ...ids])];
+    },
+    marcadosNoGrupo(m, grupo) {
+      return this.config.servicos.filter((s) => s.grupo === grupo && m.marcados.includes(s.id)).length;
+    },
+    async salvarPerfilEditor() {
+      const m = this.topo;
+      const nome = (m.nome || "").trim();
+      if (!nome) return (m.erro = "de um nome ao perfil.");
+      if (!m.marcados.length) return (m.erro = "marque pelo menos um projeto.");
       try {
-        const r = await this.enviar("/api/perfis", { id: p.id, nome: p.nome, servicos: this.selecionados });
+        const r = await this.enviar("/api/perfis", { id: m.perfil ? m.perfil.id : "", nome, servicos: m.marcados });
         this.config = r.config;
+        this.atualizarPlano();
         this.fecharTopo(true);
-        this.avisar(`perfil "${p.nome}" agora tem ${this.selecionados.length} projeto(s).`, "ok");
+        this.avisar(`perfil "${nome}" salvo com ${m.marcados.length} projeto(s).`, "ok");
       } catch (err) {
-        this.avisar(err.message, "erro");
-      }
-    },
-    async renomearPerfil(p) {
-      const nome = await this.pedirTexto("renomear perfil", "nome do perfil", p.nome);
-      if (!nome) return;
-      try {
-        const r = await this.enviar("/api/perfis", { id: p.id, nome, servicos: p.servicos });
-        this.config = r.config;
-        this.fecharTopo(true);
-      } catch (err) {
-        this.avisar(err.message, "erro");
+        m.erro = err.message;
       }
     },
     async apagarPerfil(p) {
-      if (!(await this.confirmar(`apagar o perfil "${p.nome}"?`))) return;
+      if (!(await this.confirmar(`Apagar o perfil "${p.nome}"? Os projetos continuam cadastrados - so o atalho some.`,
+        { titulo: "apagar perfil", botao: "apagar perfil" }))) return;
       try {
         const r = await this.enviar(`/api/perfis/${encodeURIComponent(p.id)}`, undefined, "DELETE");
         this.config = r.config;
@@ -1340,6 +1446,8 @@ createApp({
         timeout: Number(f.timeout) || 120, depende: f.depende,
         selecionado: f.selecionado, caminho_livre: f.caminho_livre,
         pronto: this.montarChecagem(),
+        // Com um perfil aberto, o projeto novo entra nele - senao sumiria da tela ao salvar.
+        perfil: !f.id && this.config.perfil_ativo ? this.config.perfil_ativo : "",
       };
       if (f.tipo === "app") {
         entrada.dir = (f.dir || "").trim();
@@ -1406,6 +1514,136 @@ createApp({
     // ------------------------------------------------------------------
     // seletor de pastas
     // ------------------------------------------------------------------
+    // ------------------------------------------------------------------
+    // adicionar projetos a partir de uma pasta (o launcher descobre como rodar cada um)
+    // ------------------------------------------------------------------
+    abrirImportar(grupo) {
+      this.menuAberto = null;
+      this.abrir({
+        tipo: "importar", etapa: "pasta", erro: "", carregando: false, salvando: false, livre: false,
+        pasta: { caminho: "", pai: "", raiz: "", itens: [] },
+        resultado: null, linhas: [],
+        grupo: grupo || "", grupoNovo: "", noPerfil: !!this.config.perfil_ativo, esperar: true,
+      });
+      this.navegarImportar(this.topo, "");
+    },
+    async navegarImportar(m, caminho) {
+      m.erro = "";
+      try {
+        m.pasta = await this.pedir(`/api/pastas?caminho=${encodeURIComponent(caminho || "")}${m.livre ? "&livre=1" : ""}`);
+      } catch (err) {
+        m.erro = err.message;
+      }
+    },
+    async procurarProjetos(m, caminho) {
+      m.carregando = true;
+      m.erro = "";
+      try {
+        const alvo = caminho || m.pasta.caminho;
+        const r = await this.pedir(`/api/descobrir?caminho=${encodeURIComponent(alvo)}${m.livre ? "&livre=1" : ""}`);
+        m.resultado = r;
+        m.linhas = r.projetos.map((d, i) => ({ ...d, chave: i, marcado: !d.cadastrado, porta: d.porta || null, cmd: d.cmd || "" }));
+        // Varios sistemas na mesma pasta pedem um grupo proprio com o nome dela; um so vai
+        // para o primeiro grupo que ja existe.
+        if (!m.grupo || m.grupo === "__novo") {
+          const novos = m.linhas.filter((l) => l.marcado).length;
+          if (novos > 1 || !this.config.grupos.length || m.grupo === "__novo") {
+            m.grupo = "__novo";
+            m.grupoNovo = r.nome;
+          } else {
+            m.grupo = this.config.grupos[0].id;
+          }
+        }
+        m.etapa = "resultado";
+        if (!r.projetos.length) m.erro = "nenhum projeto reconhecido nesta pasta - escolha outra ou use o cadastro manual.";
+      } catch (err) {
+        m.erro = err.message;
+      } finally {
+        m.carregando = false;
+      }
+    },
+    linhasMarcadas(m) {
+      return m.linhas.filter((l) => l.marcado);
+    },
+    temAppEContainer(m) {
+      const ls = this.linhasMarcadas(m);
+      return ls.some((l) => l.tipo === "app") && ls.some((l) => l.tipo === "docker");
+    },
+    marcarTodasLinhas(m, valor) {
+      for (const l of m.linhas) if (!valor || !l.cadastrado) l.marcado = valor;
+    },
+    rotuloTecnologia(t) {
+      return { node: "Node", go: "Go", java: "Java", dotnet: ".NET", python: "Python", php: "PHP", ruby: "Ruby",
+        rust: "Rust", script: "script", make: "make", compose: "docker" }[t] || t;
+    },
+    nomeDoCadastrado(id) {
+      return (this.config.servicos.find((s) => s.id === id) || {}).nome || id;
+    },
+    // Porta repetida nao impede (os dois podem nunca subir juntos), mas a tela avisa.
+    portaEmUso(l) {
+      const porta = Number(l.porta);
+      if (!porta) return "";
+      const outro = this.config.servicos.find((s) => s.porta === porta && s.id !== l.cadastrado);
+      return outro ? outro.nome : "";
+    },
+    async importarProjetos() {
+      const m = this.topo;
+      const linhas = this.linhasMarcadas(m);
+      if (!linhas.length) return (m.erro = "marque pelo menos um projeto.");
+      for (const l of linhas) {
+        if (!(l.nome || "").trim()) return (m.erro = "um dos projetos marcados esta sem nome.");
+        if (l.tipo === "app" && !(l.cmd || "").trim()) return (m.erro = `informe o comando de ${l.nome}.`);
+      }
+      if (m.grupo === "__novo" && !(m.grupoNovo || "").trim()) return (m.erro = "de um nome ao grupo novo.");
+
+      const projetos = linhas.map((l) => {
+        const porta = Number(l.porta) || 0;
+        const base = { nome: l.nome.trim(), tipo: l.tipo, porta, timeout: 120, depende: [], selecionado: false };
+        if (l.tipo === "app") {
+          return {
+            ...base, dir: l.dir, cmd: l.cmd.trim(), modo: "gerenciado",
+            url: porta ? `http://localhost:${porta}` : "",
+            // Sem porta, "pronto" e o processo continuar de pe (worker, bot, script).
+            pronto: porta ? { tipo: "porta", porta } : { tipo: "processo" },
+          };
+        }
+        return {
+          ...base, compose: l.compose, container: l.container,
+          // Container sem porta publicada: pronto quando esta rodando ("docker top" falha se nao).
+          pronto: porta ? { tipo: "porta", porta } : { tipo: "comando", cmd: ["docker", "top", l.container] },
+        };
+      });
+
+      m.salvando = true;
+      m.erro = "";
+      try {
+        const r = await this.enviar("/api/importar", {
+          grupo: m.grupo === "__novo" ? "" : m.grupo,
+          grupo_novo: m.grupo === "__novo" ? m.grupoNovo.trim() : "",
+          perfil: m.noPerfil ? this.config.perfil_ativo || "" : "",
+          esperar_containers: m.esperar && this.temAppEContainer(m),
+          caminho_livre: m.livre,
+          projetos,
+        });
+        this.config = r.config;
+        this.atualizarPlano();
+        this.atualizarGit(false);
+        this.fecharTopo(true);
+        this.avisar(`${projetos.length} projeto(s) adicionado(s).`, "ok");
+      } catch (err) {
+        m.erro = err.message;
+      } finally {
+        m.salvando = false;
+      }
+    },
+    // Caso que a descoberta nao cobre: cai no formulario completo.
+    cadastroManual() {
+      const m = this.topo;
+      const grupo = m.grupo && m.grupo !== "__novo" ? m.grupo : undefined;
+      this.fecharTopo(true);
+      this.formularioServico(null, grupo);
+    },
+
     escolherPasta(alvo) {
       const inicial = alvo === "compose"
         ? (this.form.composeArquivo || "").replace(/[\\/][^\\/]*$/, "")
@@ -1468,7 +1706,11 @@ createApp({
     // Clique fora fecha os modais leves. O formulario de projeto nao: um clique torto jogaria
     // fora tudo que foi digitado.
     fecharPeloFundo() {
-      if (this.topo.tipo !== "servico") this.fecharTopo();
+      const t = this.topo;
+      // Mesmo cuidado para a lista de projetos encontrados e para o editor de perfil: muita
+      // marcacao feita para um clique torto jogar fora.
+      if (t.tipo === "servico" || t.tipo === "perfil" || (t.tipo === "importar" && t.etapa === "resultado")) return;
+      this.fecharTopo();
     },
     pedirTexto(titulo, rotulo, valor) {
       return new Promise((resolver) => {
