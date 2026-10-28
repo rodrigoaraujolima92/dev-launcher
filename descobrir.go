@@ -33,6 +33,10 @@ type Descoberta struct {
 	Container  string     `json:"container,omitempty"`
 	Imagem     string     `json:"imagem,omitempty"`
 	Cadastrado string     `json:"cadastrado,omitempty"` // id do projeto que ja aponta para ca
+	// Sugerido: vem marcado na tela. Quando nao vem, Motivo diz por que (dentro de outro
+	// projeto, worktree, servico do compose que compila o proprio codigo...).
+	Sugerido bool   `json:"sugerido"`
+	Motivo   string `json:"motivo,omitempty"`
 }
 
 type ResultadoDescoberta struct {
@@ -45,7 +49,7 @@ type ResultadoDescoberta struct {
 const (
 	profundidadeDescoberta = 4    // pasta/empresa/repo/apps/web
 	maxPastasDescoberta    = 1500 // pasta enorme (C:\) nao pode travar a tela
-	maxDescobertas         = 120
+	maxDescobertas         = 300
 )
 
 // Alem das pastasIgnoradas do seletor: pastas que nunca guardam um projeto proprio.
@@ -54,6 +58,22 @@ var ignoradasDescoberta = map[string]bool{
 	"assets": true, "docs": true, "test": true, "tests": true, "e2e": true, "cypress": true,
 	"out": true, "tmp": true, "temp": true, "logs": true, "storybook-static": true,
 	"resources": true, "properties": true,
+	// Compose e projeto de deploy descrevem o servidor, nao o ambiente local.
+	"deploy": true, "deployment": true, "deployments": true, "k8s": true, "kubernetes": true,
+	"helm": true, "charts": true, "terraform": true, "ansible": true,
+	// Casca nativa de app mobile (Capacitor, React Native): o projeto e a pasta de cima.
+	"android": true, "ios": true,
+	// Codigo de exemplo e apoio dentro de um projeto.
+	"examples": true, "example": true, "samples": true, "fixtures": true, "testdata": true,
+	"mocks": true, "__tests__": true, "benchmarks": true, "templates": true,
+}
+
+// Pastas que, dentro de um projeto, costumam guardar outros sistemas de verdade (monorepo).
+// Fora delas, o que aparece dentro de um projeto ja detectado vem desmarcado.
+var pastasDeMonorepo = map[string]bool{
+	"apps": true, "packages": true, "services": true, "projects": true, "modules": true,
+	"microservices": true, "backend": true, "frontend": true, "server": true, "client": true,
+	"api": true, "web": true,
 }
 
 func descobrirProjetos(raiz string) (*ResultadoDescoberta, error) {
@@ -70,6 +90,9 @@ func descobrirProjetos(raiz string) (*ResultadoDescoberta, error) {
 	}
 	fila := []item{{raiz, 0}}
 	visitadas := 0
+	apps := []string{}              // pastas (relativas) onde ja achou um app
+	containers := map[string]bool{} // containers ja listados
+	appDaPasta := map[string]Descoberta{}
 	for len(fila) > 0 {
 		atual := fila[0]
 		fila = fila[1:]
@@ -85,8 +108,32 @@ func descobrirProjetos(raiz string) (*ResultadoDescoberta, error) {
 		if err != nil {
 			relativo = atual.dir
 		}
+		relativo = filepath.ToSlash(relativo)
+		worktree := nomesDaPasta(entradas).tem(".git") // .git arquivo: worktree ou submodulo
 		for _, d := range detectarPasta(atual.dir, entradas, true) {
-			d.Relativo = filepath.ToSlash(relativo)
+			d.Relativo = relativo
+			if d.Tipo == TipoDocker && d.Container != "" {
+				// O mesmo container em varios compose (o "db" de cada copia do repositorio) e
+				// um container so no Docker: entra uma vez.
+				chave := strings.ToLower(d.Container)
+				if containers[chave] {
+					continue
+				}
+				containers[chave] = true
+			}
+			if app, ok := appDaPasta[relativo]; ok && d.Tipo == TipoDocker && d.Sugerido && repeteOApp(d, app) {
+				d.Sugerido, d.Motivo = false, "parece ser o proprio "+app.Nome+" rodando em container"
+			}
+			if dono := projetoAcima(apps, relativo, d.Tipo == TipoDocker); dono != "" && d.Sugerido {
+				d.Sugerido, d.Motivo = false, "fica dentro de "+dono
+			}
+			if worktree && d.Sugerido {
+				d.Sugerido, d.Motivo = false, "worktree do git (copia de outro repositorio)"
+			}
+			if d.Tipo == TipoApp {
+				apps = append(apps, relativo)
+				appDaPasta[relativo] = d
+			}
 			res.Projetos = append(res.Projetos, d)
 		}
 		if len(res.Projetos) >= maxDescobertas {
@@ -117,6 +164,45 @@ func descobrirProjetos(raiz string) (*ResultadoDescoberta, error) {
 	return res, nil
 }
 
+// projetoAcima devolve o app ja detectado que contem a pasta, ou "" quando ela nao esta
+// dentro de nenhum - ou esta numa pasta de monorepo dele (apps/, packages/, services/...).
+// Compose numa pasta docker/ logo abaixo do app e o ambiente local dele: tambem conta como
+// fora.
+func projetoAcima(apps []string, relativo string, compose bool) string {
+	dono, resto := "", ""
+	for _, a := range apps {
+		var r string
+		switch {
+		case a == relativo:
+			continue
+		case a == ".":
+			r = relativo
+		case strings.HasPrefix(relativo, a+"/"):
+			r = strings.TrimPrefix(relativo, a+"/")
+		default:
+			continue
+		}
+		if dono == "" || dono == "." || len(a) > len(dono) {
+			dono, resto = a, r
+		}
+	}
+	if dono == "" {
+		return ""
+	}
+	partes := strings.Split(resto, "/")
+	primeira := strings.ToLower(partes[0])
+	if pastasDeMonorepo[primeira] {
+		return ""
+	}
+	if compose && len(partes) == 1 && (primeira == "docker" || primeira == "compose") {
+		return ""
+	}
+	if dono == "." {
+		return "esta pasta"
+	}
+	return dono
+}
+
 // detectarPasta olha uma pasta so. estrito=true e a varredura: so conta como projeto o que
 // tem evidencia de ser rodavel (uma biblioteca Go sem main nao entra).
 func detectarPasta(dir string, entradas []os.DirEntry, estrito bool) []Descoberta {
@@ -137,6 +223,7 @@ func detectarPasta(dir string, entradas []os.DirEntry, estrito bool) []Descobert
 		d := Descoberta{
 			Nome: app.Nome, Tipo: TipoApp, Tecnologia: app.Tecnologia, Dir: dir,
 			Cmd: app.Sugestoes[0].Cmd, Comandos: app.Sugestoes, Porta: app.Sugestoes[0].Porta,
+			Sugerido: true,
 		}
 		if d.Nome == "" {
 			d.Nome = filepath.Base(dir)
@@ -219,7 +306,10 @@ func detectarApp(dir string, c conteudoPasta) deteccaoApp {
 	if c.tem("package.json") {
 		if dados, err := os.ReadFile(filepath.Join(dir, "package.json")); err == nil {
 			nome, sugestoes := sugestoesNode(dir, dados, gerenciadorNode(c), envPorta)
-			anotar("node", nome, true, sugestoes...)
+			// Firebase Functions nao e sistema que se sobe local: o "serve" dele e o emulador
+			// do Firebase, e o codigo vai para a nuvem.
+			funcoes := strings.Contains(string(dados), `"firebase-functions"`)
+			anotar("node", nome, !funcoes, sugestoes...)
 		}
 	}
 	if c.tem("go.mod") {
@@ -695,7 +785,8 @@ type ServicoCompose struct {
 	Nome      string
 	Container string
 	Imagem    string
-	Porta     int // primeira porta publicada no host
+	Porta     int  // primeira porta publicada no host
+	Build     bool // compila codigo local (build:) em vez de so baixar uma imagem
 }
 
 func ehArquivoCompose(nome string) bool {
@@ -738,6 +829,7 @@ func composesDaPasta(dir string, c conteudoPasta) []Descoberta {
 				Nome: s.Nome, Tipo: TipoDocker, Tecnologia: "compose", Dir: dir,
 				Compose:   &Compose{Projeto: projeto, Arquivo: filepath.Join(dir, arquivo), Servico: s.Nome},
 				Container: container, Imagem: s.Imagem, Porta: s.Porta,
+				Sugerido: !s.Build && s.Porta > 0, Motivo: motivoCompose(s),
 			})
 		}
 	}
@@ -811,6 +903,8 @@ func lerCompose(conteudo string) (projeto string, servicos []ServicoCompose) {
 			switch strings.TrimSpace(chave) {
 			case "container_name":
 				atual.Container = limparValorYaml(valor)
+			case "build":
+				atual.Build = true
 			case "image":
 				atual.Imagem = limparValorYaml(valor)
 			case "ports":
@@ -1031,4 +1125,26 @@ func rotasDescoberta(mux *http.ServeMux, g *Gerente) {
 		}
 		responderJSON(w, http.StatusOK, map[string]any{"ids": ids, "config": g.Config()})
 	})
+}
+
+// motivoCompose explica por que um servico do compose nao vem marcado. O que vem marcado e
+// infraestrutura pronta (banco, fila, cache): imagem baixada, com porta no host.
+func motivoCompose(s ServicoCompose) string {
+	switch {
+	case s.Build:
+		return "compila o codigo do projeto - o app costuma aparecer separado na lista"
+	case s.Porta == 0:
+		return "sem porta publicada - costuma ser tarefa (migrate, seed) ou worker"
+	}
+	return ""
+}
+
+// repeteOApp diz se um servico do compose e o mesmo sistema que o app da pasta: mesmo nome
+// da pasta (ou do pacote) ou mesma porta.
+func repeteOApp(servico, app Descoberta) bool {
+	nome := strings.ToLower(servico.Nome)
+	if nome == strings.ToLower(filepath.Base(app.Dir)) || nome == strings.ToLower(app.Nome) {
+		return true
+	}
+	return servico.Porta > 0 && servico.Porta == app.Porta
 }

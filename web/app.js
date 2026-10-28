@@ -1542,7 +1542,11 @@ createApp({
         const alvo = caminho || m.pasta.caminho;
         const r = await this.pedir(`/api/descobrir?caminho=${encodeURIComponent(alvo)}${m.livre ? "&livre=1" : ""}`);
         m.resultado = r;
-        m.linhas = r.projetos.map((d, i) => ({ ...d, chave: i, marcado: !d.cadastrado, porta: d.porta || null, cmd: d.cmd || "" }));
+        // So vem marcado o que o detector tem confianca (sugerido) e ainda nao esta cadastrado;
+        // o resto aparece desmarcado, com o motivo, para quem quiser marcar mesmo assim.
+        m.linhas = r.projetos.map((d, i) => ({
+          ...d, chave: i, marcado: !d.cadastrado && d.sugerido, porta: d.porta || null, cmd: d.cmd || "",
+        }));
         // Varios sistemas na mesma pasta pedem um grupo proprio com o nome dela; um so vai
         // para o primeiro grupo que ja existe.
         if (!m.grupo || m.grupo === "__novo") {

@@ -378,3 +378,103 @@ func TestRotasDescobrirEImportar(t *testing.T) {
 		t.Fatalf("projeto importado = %+v", s)
 	}
 }
+
+// Casos reais que confundiam a varredura: compose de deploy, Firebase Functions dentro do
+// projeto, casca Android, worktree, compose que repete o app e container repetido.
+func TestDescobrirNaoConfundePastasDeApoioComProjetos(t *testing.T) {
+	compose := "services:\n  db:\n    image: postgres\n    container_name: db\n    ports:\n      - \"5432:5432\"\n" +
+		"  api:\n    build: .\n    ports:\n      - \"8083:8083\"\n  migrate:\n    image: migrate/migrate\n"
+	raiz := montarPasta(t, map[string]string{
+		// backend Nest com compose local, compose de deploy e Firebase Functions
+		"loja/backend/package.json":                      `{"name":"loja-backend","scripts":{"start:dev":"nest start --watch"}}`,
+		"loja/backend/docker-compose.yml":                "services:\n  redis:\n    image: redis\n    ports:\n      - \"6379:6379\"\n",
+		"loja/backend/deploy/homolog/docker-compose.yml": "services:\n  backend:\n    image: x\n  seed:\n    image: x\n",
+		"loja/backend/functions/package.json":            `{"scripts":{"serve":"firebase emulators:start"},"dependencies":{"firebase-functions":"^4"}}`,
+		// subpasta qualquer com package.json dentro do projeto
+		"loja/backend/tools/gerador/package.json": `{"scripts":{"dev":"node gerar.js"}}`,
+		// app mobile com casca Android
+		"loja/app/package.json":             `{"scripts":{"start":"expo start"}}`,
+		"loja/app/android/app/build.gradle": "apply plugin: 'application'",
+		// API Go cujo compose sobe o banco, a propria API (build) e uma tarefa
+		"loja/contrato/go.mod":             "module c\n",
+		"loja/contrato/main.go":            "package main\n",
+		"loja/contrato/docker-compose.yml": compose,
+		// worktree da mesma API, com o mesmo compose
+		"loja-wt/contrato-x/.git":               "gitdir: ../../loja/contrato/.git/worktrees/x\n",
+		"loja-wt/contrato-x/go.mod":             "module c\n",
+		"loja-wt/contrato-x/main.go":            "package main\n",
+		"loja-wt/contrato-x/docker-compose.yml": compose,
+		// monorepo: apps/ dentro de um projeto sao sistemas de verdade
+		"mono/package.json":           `{"scripts":{"dev":"turbo dev"}}`,
+		"mono/apps/site/package.json": `{"scripts":{"dev":"next dev"}}`,
+	})
+	res, err := descobrirProjetos(raiz)
+	if err != nil {
+		t.Fatal(err)
+	}
+	marcado := map[string]bool{}
+	motivo := map[string]string{}
+	for _, d := range res.Projetos {
+		chave := d.Relativo + ":" + d.Nome
+		marcado[chave] = d.Sugerido
+		motivo[chave] = d.Motivo
+		switch {
+		case strings.Contains(d.Relativo, "deploy"):
+			t.Fatalf("compose de deploy nao entra: %+v", d)
+		case strings.Contains(d.Relativo, "functions"):
+			t.Fatalf("Firebase Functions nao entra: %+v", d)
+		case strings.Contains(d.Relativo, "android"):
+			t.Fatalf("casca Android nao entra: %+v", d)
+		}
+	}
+	queria := map[string]bool{
+		"loja/backend:loja-backend":          true,
+		"loja/backend:redis":                 true, // compose na pasta do proprio app: e o ambiente dele
+		"loja/backend/tools/gerador:gerador": false,
+		"loja/app:app":                       true,
+		"loja/contrato:contrato":             true,
+		"loja/contrato:db":                   true,
+		"loja/contrato:api":                  false, // build: compila o proprio projeto
+		"loja/contrato:migrate":              false, // sem porta: tarefa
+		"loja-wt/contrato-x:contrato-x":      false, // worktree
+		"mono:mono":                          true,
+		"mono/apps/site:site":                true,
+	}
+	for chave, sugerido := range queria {
+		got, ok := marcado[chave]
+		if !ok {
+			t.Fatalf("faltou %s na lista: %v", chave, marcado)
+		}
+		if got != sugerido {
+			t.Fatalf("%s sugerido=%v, queria %v (motivo %q)", chave, got, sugerido, motivo[chave])
+		}
+		if !sugerido && motivo[chave] == "" {
+			t.Fatalf("%s vem desmarcado sem motivo", chave)
+		}
+	}
+	// O "db" do worktree e o mesmo container do original: aparece uma vez so.
+	if _, repetido := marcado["loja-wt/contrato-x:db"]; repetido {
+		t.Fatalf("container repetido entrou duas vezes: %v", marcado)
+	}
+}
+
+func TestComposeQueRepeteOApp(t *testing.T) {
+	raiz := montarPasta(t, map[string]string{
+		"permissions-api/go.mod":             "module p\n",
+		"permissions-api/main.go":            "package main\n",
+		"permissions-api/docker-compose.yml": "services:\n  permissions-api:\n    image: empresa/permissions\n    ports:\n      - \"3000:3000\"\n",
+	})
+	res, err := descobrirProjetos(raiz)
+	if err != nil {
+		t.Fatal(err)
+	}
+	d := acharDescoberta(t, res, "permissions-api", "permissions-api")
+	for _, p := range res.Projetos {
+		if p.Tipo == TipoDocker {
+			d = p
+		}
+	}
+	if d.Sugerido || !strings.Contains(d.Motivo, "proprio") {
+		t.Fatalf("o container do proprio app deveria vir desmarcado: %+v", d)
+	}
+}

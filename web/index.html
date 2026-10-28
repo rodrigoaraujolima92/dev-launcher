@@ -466,7 +466,7 @@
             <span class="trilha"><b>{{ topo.resultado.caminho }}</b></span>
             <button type="button" class="link" @click="topo.etapa = 'pasta'; topo.erro = ''">trocar pasta</button>
             <span class="espaco"></span>
-            <span class="fraco">{{ topo.linhas.length }} encontrado(s)</span>
+            <span class="fraco">{{ topo.linhas.length }} encontrado(s), {{ linhasMarcadas(topo).length }} marcado(s)</span>
             <button type="button" class="link" @click="marcarTodasLinhas(topo, true)">marcar todos</button>
             <button type="button" class="link" @click="marcarTodasLinhas(topo, false)">desmarcar</button>
           </div>
@@ -502,6 +502,7 @@
                     <input type="number" v-model="l.porta" min="1" max="65535" :disabled="!l.marcado" class="mono" placeholder="-" aria-label="porta">
                   </label>
                 </div>
+                <div class="il-dica il-motivo" v-if="l.motivo && !l.cadastrado">desmarcado: {{ l.motivo }}.</div>
                 <div class="il-dica" v-if="l.marcado && (portaEmUso(l) || !l.porta)">
                   <span v-if="portaEmUso(l)" class="aviso-txt">a porta {{ l.porta }} ja e usada por {{ portaEmUso(l) }}.</span>
                   <span v-else-if="l.tipo === 'app'">sem porta: o launcher considera pronto enquanto o processo estiver rodando.</span>
