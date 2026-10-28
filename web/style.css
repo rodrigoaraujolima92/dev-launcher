@@ -1576,6 +1576,49 @@ main {
   .pr-chips { max-width: none; justify-content: flex-start; }
 }
 
+/* ---------------- subprojetos ---------------- */
+
+/* Subprojeto: recuado sob o projeto principal, com um fio ligando os dois. */
+.cartao.sub { margin-left: 38px; padding-top: 9px; padding-bottom: 9px; background: rgba(21, 24, 32, 0.4); cursor: default; }
+.cartao.sub::before {
+  content: "";
+  position: absolute;
+  left: -22px;
+  top: -10px;
+  width: 14px;
+  height: calc(50% + 10px);
+  border-left: 1px solid var(--linha-forte);
+  border-bottom: 1px solid var(--linha-forte);
+  border-bottom-left-radius: 6px;
+  pointer-events: none;
+}
+.cartao.sub .nome { font-size: 14px; }
+.seta-sub { margin-right: 6px; color: var(--fraco); font-weight: 400; }
+.etiqueta.subs { font-family: var(--sans); color: var(--azul); background: rgba(108, 180, 255, 0.12); }
+
+.il-subs { display: flex; align-items: baseline; flex-wrap: wrap; gap: 4px 8px; font-size: 12px; }
+.il-subs > .link { font-size: 12px; color: var(--azul); }
+.il-subs-lista { flex-basis: 100%; margin: 4px 0 0; padding: 6px 10px; list-style: none; background: var(--painel); border-radius: 7px; }
+.il-subs-lista li { display: flex; align-items: center; gap: 8px; padding: 2px 0; }
+
+.subprojetos .rotulo-campo b { margin-left: 6px; color: var(--azul); font-weight: 600; }
+.lista-subs {
+  display: flex;
+  flex-direction: column;
+  max-height: 34vh;
+  overflow: auto;
+  padding: 4px;
+  background: var(--poco);
+  border: 1px solid var(--linha-forte);
+  border-radius: 10px;
+}
+.sub-linha { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 14px; padding: 6px 8px; border-radius: 7px; font-size: 12.5px; }
+.sub-linha + .sub-linha { border-top: 1px solid var(--linha); }
+.sub-linha.ativo { background: rgba(108, 180, 255, 0.06); }
+.sub-ativar { display: flex; align-items: center; gap: 8px; flex: 1; min-width: 0; cursor: pointer; }
+.sub-ativar input, .sub-esperar input { accent-color: var(--ambar); }
+.sub-esperar { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--suave); cursor: pointer; }
+
 /* ---------------- editor de perfil ---------------- */
 
 .perfil-topo { display: flex; align-items: center; gap: 12px; margin: 14px 0 6px; }

@@ -40,6 +40,8 @@ const FORM_VAZIO = () => ({
   container: "", porta: null, url: "",
   prontoTipo: "porta", prontoDetalhe: "", timeout: 120,
   depende: [], selecionado: true, sugestoes: null, erro: "",
+  // subprojetos: so no editor de um projeto principal ja cadastrado
+  pai: "", subs: null, carregandoSubs: false, erroSubs: "",
 });
 
 // ------------------------------------------------------------------
@@ -252,10 +254,8 @@ createApp({
       return this.config.perfis.find((p) => p.id === this.config.perfil_ativo) || null;
     },
     servicosNoPerfil() {
-      const p = this.perfilAtivo;
-      if (!p) return this.config.servicos;
-      const ids = new Set(p.servicos);
-      return this.config.servicos.filter((s) => ids.has(s.id));
+      if (!this.perfilAtivo) return this.config.servicos;
+      return this.config.servicos.filter(this.noPerfil);
     },
     subindo() {
       return this.contagem.andando > 0;
@@ -423,14 +423,29 @@ createApp({
       return true;
     },
     // servicosDe e o que aparece na tela (respeita o filtro); todosDe e o grupo inteiro.
+    // Subprojeto vem logo abaixo do projeto principal, na ordem do config.
     servicosDe(grupo) {
-      return this.config.servicos.filter((s) => s.grupo === grupo && this.passaNoFiltro(s));
+      const lista = this.config.servicos.filter((s) => s.grupo === grupo && this.passaNoFiltro(s));
+      const visiveis = new Set(lista.map((s) => s.id));
+      const out = [];
+      for (const s of lista) {
+        if (s.pai && visiveis.has(s.pai)) continue; // entra junto com o pai
+        out.push(s);
+        if (!s.pai) out.push(...lista.filter((f) => f.pai === s.id));
+      }
+      return out;
+    },
+    subprojetosDe(id) {
+      return this.config.servicos.filter((s) => s.pai === id);
     },
     todosDe(grupo) {
       return this.config.servicos.filter((s) => s.grupo === grupo && this.noPerfil(s));
     },
+    // Subprojeto acompanha o pai: aparece em todo perfil que tem o projeto principal.
     noPerfil(s) {
-      return !this.perfilAtivo || this.perfilAtivo.servicos.includes(s.id);
+      if (!this.perfilAtivo) return true;
+      const ids = this.perfilAtivo.servicos;
+      return ids.includes(s.id) || (!!s.pai && ids.includes(s.pai));
     },
     noArDe(grupo) {
       return this.todosDe(grupo).filter((s) => this.estado(s.id).status === "pronto").length;
@@ -1231,7 +1246,8 @@ createApp({
       ev.dataTransfer.setData("text/plain", s.id);
     },
     marcarAlvo(grupo, s) {
-      if (!this.arraste.id || this.arraste.id === s.id) return;
+      // Subprojeto nao e alvo: soltar entre o pai e os filhos separaria os dois na tela.
+      if (!this.arraste.id || this.arraste.id === s.id || s.pai) return;
       this.arraste.grupo = grupo;
       this.arraste.antes = s.id;
     },
@@ -1378,6 +1394,7 @@ createApp({
           prontoTipo: s.pronto.tipo, timeout: s.timeout || 120,
           depende: [...s.depende],
           selecionado: !!s.selecionado,
+          pai: s.pai || "",
           prontoDetalhe: s.pronto.tipo === "comando" ? (s.pronto.cmd || []).join(" ")
             : s.pronto.tipo === "http" ? (s.pronto.url || "") : String(s.pronto.porta || ""),
         });
@@ -1388,6 +1405,75 @@ createApp({
       this.menuAberto = null;
       this.abrir({ tipo: "servico" });
       this.$nextTick(() => this.$refs.entradaNome?.focus());
+      // A lista de subprojetos ja vem pronta ao abrir o editor do projeto principal.
+      if (s && s.tipo === "app" && !s.pai) this.carregarSubprojetos();
+    },
+
+    // ------------------------------------------------------------------
+    // subprojetos (servicos e dockers de dentro da pasta de um projeto)
+    // ------------------------------------------------------------------
+    async carregarSubprojetos() {
+      const f = this.form;
+      f.carregandoSubs = true;
+      f.erroSubs = "";
+      try {
+        const lista = await this.pedir(`/api/servicos/${encodeURIComponent(f.id)}/subprojetos`);
+        if (this.form !== f) return;
+        f.subs = lista.map((d, i) => ({ ...d, chave: i, esperarNovo: !!d.esperar, ocupado: false }));
+      } catch (err) {
+        f.erroSubs = err.message;
+        f.subs = [];
+      } finally {
+        f.carregandoSubs = false;
+      }
+    },
+    // Ativar e desativar valem na hora (nao esperam o "salvar" do formulario).
+    async alternarSubprojeto(d) {
+      const f = this.form;
+      if (d.ocupado) return;
+      d.ocupado = true;
+      f.erroSubs = "";
+      try {
+        if (d.ativo) {
+          const r = await this.enviar(`/api/servicos/${encodeURIComponent(d.ativo)}`, undefined, "DELETE");
+          this.config = r.config;
+          f.depende = f.depende.filter((x) => x !== d.ativo);
+          d.ativo = "";
+        } else {
+          const r = await this.enviar(`/api/servicos/${encodeURIComponent(f.id)}/subprojetos`,
+            { entrada: this.entradaDeDescoberta(d), esperar: d.esperarNovo });
+          this.config = r.config;
+          d.ativo = r.id;
+          if (d.esperarNovo) f.depende = [...new Set([...f.depende, r.id])];
+        }
+        this.atualizarPlano();
+      } catch (err) {
+        f.erroSubs = err.message;
+      } finally {
+        d.ocupado = false;
+      }
+    },
+    subsAtivos() {
+      return (this.form.subs || []).filter((d) => d.ativo).length;
+    },
+
+    // entradaDeDescoberta monta o cadastro de um item achado pela varredura.
+    entradaDeDescoberta(l) {
+      const porta = Number(l.porta) || 0;
+      const base = { nome: (l.nome || "").trim(), tipo: l.tipo, porta, timeout: 120, depende: [], selecionado: false };
+      if (l.tipo === "app") {
+        return {
+          ...base, dir: l.dir, cmd: (l.cmd || "").trim(), modo: "gerenciado",
+          url: porta ? `http://localhost:${porta}` : "",
+          // Sem porta, "pronto" e o processo continuar de pe (worker, bot, script).
+          pronto: porta ? { tipo: "porta", porta } : { tipo: "processo" },
+        };
+      }
+      return {
+        ...base, compose: l.compose, container: l.container,
+        // Container sem porta publicada: pronto quando esta rodando ("docker top" falha se nao).
+        pronto: porta ? { tipo: "porta", porta } : { tipo: "comando", cmd: ["docker", "top", l.container] },
+      };
     },
 
     trocarTipo(tipo) {
@@ -1446,6 +1532,7 @@ createApp({
         timeout: Number(f.timeout) || 120, depende: f.depende,
         selecionado: f.selecionado, caminho_livre: f.caminho_livre,
         pronto: this.montarChecagem(),
+        pai: f.pai || "",
         // Com um perfil aberto, o projeto novo entra nele - senao sumiria da tela ao salvar.
         perfil: !f.id && this.config.perfil_ativo ? this.config.perfil_ativo : "",
       };
@@ -1490,7 +1577,10 @@ createApp({
 
     async apagarServico() {
       const nome = this.form.nome;
-      if (!(await this.confirmar(`apagar "${nome}" do launcher? (nao mexe nos arquivos do projeto)`))) return;
+      const filhos = this.subprojetosDe(this.form.id).length;
+      const extra = filhos ? ` Os ${filhos} subprojeto(s) dele saem junto.` : "";
+      if (!(await this.confirmar(`Apagar "${nome}" do launcher? Nao mexe nos arquivos do projeto.${extra}`,
+        { titulo: "apagar projeto", botao: "apagar" }))) return;
       try {
         const r = await this.enviar(`/api/servicos/${encodeURIComponent(this.form.id)}`, undefined, "DELETE");
         this.config = r.config;
@@ -1544,13 +1634,16 @@ createApp({
         m.resultado = r;
         // So vem marcado o que o detector tem confianca (sugerido) e ainda nao esta cadastrado;
         // o resto aparece desmarcado, com o motivo, para quem quiser marcar mesmo assim.
+        // Item com dono e subprojeto: aparece dentro da linha do projeto e se ativa depois,
+        // no editor dele.
         m.linhas = r.projetos.map((d, i) => ({
-          ...d, chave: i, marcado: !d.cadastrado && d.sugerido, porta: d.porta || null, cmd: d.cmd || "",
+          ...d, chave: i, marcado: !d.dono && !d.cadastrado && d.sugerido, porta: d.porta || null, cmd: d.cmd || "",
+          verSubs: false,
         }));
         // Varios sistemas na mesma pasta pedem um grupo proprio com o nome dela; um so vai
         // para o primeiro grupo que ja existe.
         if (!m.grupo || m.grupo === "__novo") {
-          const novos = m.linhas.filter((l) => l.marcado).length;
+          const novos = this.linhasMarcadas(m).length;
           if (novos > 1 || !this.config.grupos.length || m.grupo === "__novo") {
             m.grupo = "__novo";
             m.grupoNovo = r.nome;
@@ -1567,14 +1660,21 @@ createApp({
       }
     },
     linhasMarcadas(m) {
-      return m.linhas.filter((l) => l.marcado);
+      return m.linhas.filter((l) => l.marcado && !l.dono);
+    },
+    linhasPrincipais(m) {
+      return m.linhas.filter((l) => !l.dono);
+    },
+    subsDaLinha(m, l) {
+      if (l.tipo !== "app") return [];
+      return m.linhas.filter((x) => x.dono === l.relativo && x !== l);
     },
     temAppEContainer(m) {
       const ls = this.linhasMarcadas(m);
       return ls.some((l) => l.tipo === "app") && ls.some((l) => l.tipo === "docker");
     },
     marcarTodasLinhas(m, valor) {
-      for (const l of m.linhas) if (!valor || !l.cadastrado) l.marcado = valor;
+      for (const l of this.linhasPrincipais(m)) if (!valor || !l.cadastrado) l.marcado = valor;
     },
     rotuloTecnologia(t) {
       return { node: "Node", go: "Go", java: "Java", dotnet: ".NET", python: "Python", php: "PHP", ruby: "Ruby",
@@ -1600,23 +1700,7 @@ createApp({
       }
       if (m.grupo === "__novo" && !(m.grupoNovo || "").trim()) return (m.erro = "de um nome ao grupo novo.");
 
-      const projetos = linhas.map((l) => {
-        const porta = Number(l.porta) || 0;
-        const base = { nome: l.nome.trim(), tipo: l.tipo, porta, timeout: 120, depende: [], selecionado: false };
-        if (l.tipo === "app") {
-          return {
-            ...base, dir: l.dir, cmd: l.cmd.trim(), modo: "gerenciado",
-            url: porta ? `http://localhost:${porta}` : "",
-            // Sem porta, "pronto" e o processo continuar de pe (worker, bot, script).
-            pronto: porta ? { tipo: "porta", porta } : { tipo: "processo" },
-          };
-        }
-        return {
-          ...base, compose: l.compose, container: l.container,
-          // Container sem porta publicada: pronto quando esta rodando ("docker top" falha se nao).
-          pronto: porta ? { tipo: "porta", porta } : { tipo: "comando", cmd: ["docker", "top", l.container] },
-        };
-      });
+      const projetos = linhas.map((l) => this.entradaDeDescoberta(l));
 
       m.salvando = true;
       m.erro = "";

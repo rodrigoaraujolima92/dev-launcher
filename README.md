@@ -312,6 +312,30 @@ Um perfil e uma visao da tela: o conjunto de projetos que voce usa junto num con
 Sem porta, o app fica pronto enquanto o processo estiver de pe (checagem **processo
 rodando**); container sem porta publicada fica pronto quando esta rodando (`docker top`).
 
+### O que a varredura deixa de fora ou desmarcado
+
+- **Fora:** pastas de deploy (`deploy`, `k8s`, `helm`, `terraform`...), `android`/`ios`,
+  exemplos e fixtures, e Firebase Functions.
+- **Desmarcado, com o motivo na linha:** worktree do git (copia de outro repositorio) e
+  servico do compose que compila o codigo do projeto, que nao publica porta (migrate, seed,
+  worker) ou que repete o app da pasta.
+- O mesmo container em varios compose aparece uma vez so.
+
+### Subprojetos
+
+O que fica **dentro da pasta de um projeto** - o docker-compose dele (banco, cache), uma
+subpasta com outro sistema - nao entra solto: na lista de importacao, a linha do projeto
+mostra **N subprojeto(s)/servico(s) que ele pode subir** (clique para ver quais). Pastas de
+monorepo (`apps/`, `packages/`, `services/`, `backend/`, `frontend/`...) continuam virando
+projetos proprios.
+
+Para usar um subprojeto, abra **editar projeto**: a secao **subprojetos** ja vem com a lista
+da pasta. Marcar ativa na hora (e desmarcar remove); **o projeto espera por ele** faz o
+principal so subir depois do subprojeto - vem sugerido para banco/cache do compose. Ativado,
+o subprojeto aparece logo abaixo do principal, recuado, com subir, parar e log proprios;
+acompanha o principal de grupo e de perfil, nao se arrasta sozinho e sai junto quando o
+principal e apagado.
+
 **cadastro manual** (no rodape do assistente) abre o formulario completo, para o que a
 descoberta nao cobre. O mesmo formulario edita um projeto ja cadastrado (`⋯` > editar
 projeto); o **procurar** dele usa o mesmo detector para sugerir o comando. Porta repetida
@@ -421,6 +445,7 @@ Config da primeira versao (sem `grupos`/`perfis`) e migrado sozinho ao abrir.
 | POST/DELETE | `/api/grupos` · `/api/grupos/ordem` · `/api/grupos/{id}` | grupos |
 | POST/DELETE | `/api/perfis` · `/api/perfis/{id}/aplicar` · `/api/perfis/{id}` | perfis (`todos/aplicar` volta para o TODOS) |
 | GET | `/api/descobrir?caminho=...` | projetos encontrados na pasta e subpastas, com comando e porta sugeridos |
+| GET/POST | `/api/servicos/{id}/subprojetos` | lista o que da para subir de dentro da pasta do projeto / ativa um (`{"entrada", "esperar"}`) |
 | POST | `/api/importar` | `{"grupo", "grupo_novo", "perfil", "esperar_containers", "projetos": [...]}` - cadastra todos ou nenhum |
 | GET | `/api/pastas` · `/api/inspecionar` | seletor de pastas e sugestoes (`?livre=1` sai da cerca) |
 

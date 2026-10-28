@@ -37,6 +37,13 @@ type Descoberta struct {
 	// projeto, worktree, servico do compose que compila o proprio codigo...).
 	Sugerido bool   `json:"sugerido"`
 	Motivo   string `json:"motivo,omitempty"`
+	// Dono: pasta (relativa) do projeto que contem este item. Item com dono e subprojeto:
+	// nao se cadastra solto, se ativa no editor do projeto.
+	Dono string `json:"dono,omitempty"`
+	// Na lista de subprojetos de um projeto ja cadastrado: Ativo e o id do subprojeto que ja
+	// existe para este item; Esperar e a sugestao de o projeto esperar por ele.
+	Ativo   string `json:"ativo,omitempty"`
+	Esperar bool   `json:"esperar,omitempty"`
 }
 
 type ResultadoDescoberta struct {
@@ -121,11 +128,22 @@ func descobrirProjetos(raiz string) (*ResultadoDescoberta, error) {
 				}
 				containers[chave] = true
 			}
-			if app, ok := appDaPasta[relativo]; ok && d.Tipo == TipoDocker && d.Sugerido && repeteOApp(d, app) {
-				d.Sugerido, d.Motivo = false, "parece ser o proprio "+app.Nome+" rodando em container"
+			if app, ok := appDaPasta[relativo]; ok && d.Tipo == TipoDocker {
+				// Compose na pasta do proprio app: e o ambiente dele (banco, cache), subprojeto.
+				d.Dono = relativo
+				d.Esperar = d.Sugerido
+				if d.Sugerido && repeteOApp(d, app) {
+					d.Sugerido, d.Esperar, d.Motivo = false, false, "parece ser o proprio "+app.Nome+" rodando em container"
+				}
 			}
-			if dono := projetoAcima(apps, relativo, d.Tipo == TipoDocker); dono != "" && d.Sugerido {
-				d.Sugerido, d.Motivo = false, "fica dentro de "+dono
+			if dono := projetoAcima(apps, relativo, d.Tipo == TipoDocker); dono != "" {
+				d.Dono = dono
+				// Banco/cache numa pasta docker/ do app: o app costuma precisar dele no ar.
+				d.Esperar = d.Tipo == TipoDocker && d.Sugerido && strings.HasPrefix(relativo, dono+"/") &&
+					!strings.Contains(strings.TrimPrefix(relativo, dono+"/"), "/")
+				if d.Sugerido && !d.Esperar {
+					d.Sugerido, d.Motivo = false, "fica dentro de "+rotuloPasta(dono)
+				}
 			}
 			if worktree && d.Sugerido {
 				d.Sugerido, d.Motivo = false, "worktree do git (copia de outro repositorio)"
@@ -164,11 +182,9 @@ func descobrirProjetos(raiz string) (*ResultadoDescoberta, error) {
 	return res, nil
 }
 
-// projetoAcima devolve o app ja detectado que contem a pasta, ou "" quando ela nao esta
-// dentro de nenhum - ou esta numa pasta de monorepo dele (apps/, packages/, services/...).
-// Compose numa pasta docker/ logo abaixo do app e o ambiente local dele: tambem conta como
-// fora.
-func projetoAcima(apps []string, relativo string, compose bool) string {
+// projetoAcima devolve a pasta do app ja detectado que contem esta, ou "" quando ela nao
+// esta dentro de nenhum - ou esta numa pasta de monorepo dele (apps/, packages/, ...).
+func projetoAcima(apps []string, relativo string, _ bool) string {
 	dono, resto := "", ""
 	for _, a := range apps {
 		var r string
@@ -190,17 +206,17 @@ func projetoAcima(apps []string, relativo string, compose bool) string {
 		return ""
 	}
 	partes := strings.Split(resto, "/")
-	primeira := strings.ToLower(partes[0])
-	if pastasDeMonorepo[primeira] {
+	if pastasDeMonorepo[strings.ToLower(partes[0])] {
 		return ""
-	}
-	if compose && len(partes) == 1 && (primeira == "docker" || primeira == "compose") {
-		return ""
-	}
-	if dono == "." {
-		return "esta pasta"
 	}
 	return dono
+}
+
+func rotuloPasta(relativo string) string {
+	if relativo == "." {
+		return "esta pasta"
+	}
+	return relativo
 }
 
 // detectarPasta olha uma pasta so. estrito=true e a varredura: so conta como projeto o que
@@ -1097,7 +1113,122 @@ func (g *Gerente) ImportarProjetos(p PedidoImportar) ([]string, error) {
 	return ids, err
 }
 
+// Subprojetos lista o que da para subir de dentro da pasta de um projeto - o compose dele,
+// subpastas com outro sistema - marcando o que ja esta ativo como subprojeto.
+func (g *Gerente) Subprojetos(id string) ([]Descoberta, error) {
+	g.mu.Lock()
+	s := g.cfg.porID(id)
+	var dir string
+	if s != nil {
+		dir = caminhoAbsoluto(g.raiz, s.Dir)
+	}
+	g.mu.Unlock()
+	switch {
+	case s == nil:
+		return nil, fmt.Errorf("projeto desconhecido: %s", id)
+	case s.Tipo != TipoApp:
+		return nil, fmt.Errorf("%s nao e um projeto com pasta", s.Nome)
+	case s.Pai != "":
+		return nil, fmt.Errorf("%s ja e subprojeto - subprojeto nao tem subprojetos", s.Nome)
+	}
+	res, err := descobrirProjetos(dir)
+	if err != nil {
+		return nil, err
+	}
+	g.mu.Lock()
+	marcarCadastrados(res, g.cfg, g.raiz)
+	filhos := map[string]bool{}
+	for _, x := range g.cfg.Servicos {
+		if x.Pai == id {
+			filhos[x.ID] = true
+		}
+	}
+	g.mu.Unlock()
+
+	out := []Descoberta{}
+	for _, d := range res.Projetos {
+		if d.Tipo == TipoApp && d.Relativo == "." {
+			continue // o proprio projeto
+		}
+		if filhos[d.Cadastrado] {
+			d.Ativo, d.Cadastrado = d.Cadastrado, ""
+		}
+		d.Dono = ""
+		out = append(out, d)
+	}
+	return out, nil
+}
+
+// PedidoSubprojeto ativa um item da lista de subprojetos.
+type PedidoSubprojeto struct {
+	Entrada EntradaServico `json:"entrada"`
+	Esperar bool           `json:"esperar"` // o projeto principal passa a esperar por ele
+}
+
+func ativarSubprojeto(cfg *Config, pai string, p PedidoSubprojeto, raizProjeto, raizNavegacao string) (string, error) {
+	novo := clonarConfig(cfg)
+	principal := novo.porID(pai)
+	if principal == nil {
+		return "", fmt.Errorf("projeto desconhecido: %s", pai)
+	}
+	if principal.Pai != "" {
+		return "", fmt.Errorf("%s ja e subprojeto - subprojeto nao tem subprojetos", principal.Nome)
+	}
+	e := p.Entrada
+	e.ID, e.Perfil, e.Pai = "", "", pai
+	e.Grupo = principal.Grupo
+	// A pasta do subprojeto fica dentro da do pai, que ja passou pela cerca no cadastro dele.
+	e.CaminhoLivre = true
+	e.Selecionado = principal.Selecionado
+	id, err := salvarServico(novo, e, raizProjeto, raizNavegacao)
+	if err != nil {
+		return "", err
+	}
+	if p.Esperar {
+		principal = novo.porID(pai)
+		principal.Depende = limparLista(append(principal.Depende, id))
+	}
+	if err := novo.validar(); err != nil {
+		return "", err
+	}
+	*cfg = *novo
+	return id, nil
+}
+
+func (g *Gerente) AtivarSubprojeto(pai string, p PedidoSubprojeto) (string, error) {
+	var id string
+	err := g.mutar(func(cfg *Config) error {
+		var err error
+		id, err = ativarSubprojeto(cfg, pai, p, g.raiz, g.raizNavegacao)
+		return err
+	})
+	return id, err
+}
+
 func rotasDescoberta(mux *http.ServeMux, g *Gerente) {
+	mux.HandleFunc("GET /api/servicos/{id}/subprojetos", func(w http.ResponseWriter, r *http.Request) {
+		lista, err := g.Subprojetos(r.PathValue("id"))
+		if err != nil {
+			responderErro(w, http.StatusBadRequest, err)
+			return
+		}
+		responderJSON(w, http.StatusOK, lista)
+	})
+
+	mux.HandleFunc("POST /api/servicos/{id}/subprojetos", func(w http.ResponseWriter, r *http.Request) {
+		var p PedidoSubprojeto
+		if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<16)).Decode(&p); err != nil {
+			responderErro(w, http.StatusBadRequest, err)
+			return
+		}
+		id, err := g.AtivarSubprojeto(r.PathValue("id"), p)
+		if err != nil {
+			responderErro(w, http.StatusBadRequest, err)
+			return
+		}
+		responderJSON(w, http.StatusOK, map[string]any{"id": id, "config": g.Config()})
+	})
+
 	mux.HandleFunc("GET /api/descobrir", func(w http.ResponseWriter, r *http.Request) {
 		caminho, _, err := caminhoPedido(g, r)
 		if err != nil {

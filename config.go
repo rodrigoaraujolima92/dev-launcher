@@ -46,6 +46,9 @@ type Servico struct {
 	Modo        string   `json:"modo,omitempty"`
 	Depende     []string `json:"depende"`
 	Selecionado bool     `json:"selecionado"`
+	// Pai: subprojeto de outro projeto (o docker-compose ou a subpasta de dentro dele). Fica
+	// sempre no grupo do pai, aparece logo abaixo dele e sai junto quando o pai e apagado.
+	Pai string `json:"pai,omitempty"`
 }
 
 // Grupo e uma secao da tela: serve para separar os projetos por empresa/produto
@@ -242,6 +245,22 @@ func (c *Config) validar() error {
 		if !gruposVistos[s.Grupo] {
 			return fmt.Errorf("%s esta no grupo %q, que nao existe", s.ID, s.Grupo)
 		}
+	}
+
+	for _, s := range c.Servicos {
+		if s.Pai == "" {
+			continue
+		}
+		pai := c.porID(s.Pai)
+		switch {
+		case s.Pai == s.ID:
+			return fmt.Errorf("%s nao pode ser subprojeto de si mesmo", s.ID)
+		case pai == nil:
+			return fmt.Errorf("%s e subprojeto de %q, que nao existe", s.ID, s.Pai)
+		case pai.Pai != "":
+			return fmt.Errorf("%s e subprojeto de %s, que ja e subprojeto - so um nivel", s.ID, s.Pai)
+		}
+		s.Grupo = pai.Grupo // subprojeto acompanha o pai de secao
 	}
 
 	for _, s := range c.Servicos {
@@ -549,6 +568,7 @@ type EntradaServico struct {
 	// Perfil: projeto novo cadastrado com um perfil aberto entra nele tambem - senao some da
 	// tela assim que e salvo, porque a tela so mostra os projetos do perfil.
 	Perfil string `json:"perfil,omitempty"`
+	Pai    string `json:"pai,omitempty"`
 }
 
 // salvarServico cria (ID vazio) ou substitui um servico. Devolve o id gravado.
@@ -571,6 +591,14 @@ func salvarServico(cfg *Config, entrada EntradaServico, raizProjeto, raizNavegac
 		Modo:        entrada.Modo,
 		Depende:     limparLista(entrada.Depende),
 		Selecionado: entrada.Selecionado,
+		Pai:         strings.TrimSpace(entrada.Pai),
+	}
+	if s.Pai != "" {
+		pai := novo.porID(s.Pai)
+		if pai == nil {
+			return "", fmt.Errorf("projeto principal desconhecido: %s", s.Pai)
+		}
+		s.Grupo = pai.Grupo
 	}
 	if s.Grupo == "" {
 		// Config novo ainda nao tem secao nenhuma: o primeiro projeto cria a "geral".
@@ -681,6 +709,9 @@ func moverServico(cfg *Config, id, grupo, antes string) error {
 	if novo.grupoPorID(grupo) == nil {
 		return fmt.Errorf("grupo desconhecido: %s", grupo)
 	}
+	if s.Pai != "" {
+		return fmt.Errorf("%s e subprojeto: ele acompanha o projeto principal", s.Nome)
+	}
 	if antes == id {
 		return nil // soltou em cima de si mesmo: nada a fazer
 	}
@@ -746,17 +777,28 @@ func removerServico(cfg *Config, id string) error {
 	if novo.porID(id) == nil {
 		return fmt.Errorf("servico desconhecido: %s", id)
 	}
+	// Os subprojetos pertencem ao projeto: saem junto.
+	sai := map[string]bool{id: true}
+	for _, s := range novo.Servicos {
+		if s.Pai == id {
+			sai[s.ID] = true
+		}
+	}
 	restantes := []*Servico{}
 	for _, s := range novo.Servicos {
-		if s.ID == id {
+		if sai[s.ID] {
 			continue
 		}
-		s.Depende = remover(s.Depende, id)
+		for apagado := range sai {
+			s.Depende = remover(s.Depende, apagado)
+		}
 		restantes = append(restantes, s)
 	}
 	novo.Servicos = restantes
 	for _, p := range novo.Perfis {
-		p.Servicos = remover(p.Servicos, id)
+		for apagado := range sai {
+			p.Servicos = remover(p.Servicos, apagado)
+		}
 	}
 
 	if err := novo.validar(); err != nil {

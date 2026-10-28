@@ -478,3 +478,137 @@ func TestComposeQueRepeteOApp(t *testing.T) {
 		t.Fatalf("o container do proprio app deveria vir desmarcado: %+v", d)
 	}
 }
+
+// ------------------------------------------------------------------
+// subprojetos
+// ------------------------------------------------------------------
+
+func TestDescobrirMarcaODonoDosSubprojetos(t *testing.T) {
+	raiz := montarPasta(t, map[string]string{
+		"backend/package.json":               `{"name":"backend","scripts":{"start:dev":"nest start"}}`,
+		"backend/docker-compose.yml":         "services:\n  redis:\n    image: redis\n    ports:\n      - \"6379:6379\"\n",
+		"backend/tools/gerador/package.json": `{"scripts":{"dev":"node x.js"}}`,
+		"infra/docker-compose.yml":           "services:\n  pg:\n    image: postgres\n    ports:\n      - \"5432:5432\"\n",
+	})
+	res, err := descobrirProjetos(raiz)
+	if err != nil {
+		t.Fatal(err)
+	}
+	donos := map[string]string{}
+	esperar := map[string]bool{}
+	for _, d := range res.Projetos {
+		donos[d.Nome] = d.Dono
+		esperar[d.Nome] = d.Esperar
+	}
+	if donos["backend"] != "" || donos["pg"] != "" {
+		t.Fatalf("projeto e compose solto nao tem dono: %v", donos)
+	}
+	if donos["redis"] != "backend" || donos["gerador"] != "backend" {
+		t.Fatalf("compose e subpasta do backend sao subprojetos dele: %v", donos)
+	}
+	if !esperar["redis"] || esperar["gerador"] {
+		t.Fatalf("so o redis (infra do backend) deveria sugerir que o backend espere: %v", esperar)
+	}
+}
+
+func TestSubprojetoAtivarAcompanharEApagarJunto(t *testing.T) {
+	cfg := configTeste()
+	raiz := t.TempDir()
+	compose := filepath.Join(raiz, "backend", "docker-compose.yml")
+	if err := os.MkdirAll(filepath.Dir(compose), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(compose, []byte("services:\n  redis:\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := salvarPerfil(cfg, "", "foco", []string{"api"}); err != nil {
+		t.Fatal(err)
+	}
+
+	pedido := PedidoSubprojeto{Esperar: true, Entrada: EntradaServico{
+		Nome: "redis", Tipo: TipoDocker, Compose: &Compose{Projeto: "backend", Arquivo: compose, Servico: "redis"},
+		Container: "backend-redis-1", Pronto: Checagem{Tipo: "porta", Porta: 6379}, Porta: 6379, Timeout: 60,
+	}}
+	id, err := ativarSubprojeto(cfg, "api", pedido, raiz, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	sub, api := cfg.porID(id), cfg.porID("api")
+	if sub.Pai != "api" || sub.Grupo != api.Grupo || !contem(api.Depende, id) {
+		t.Fatalf("subprojeto = %+v, depende do pai = %v", sub, api.Depende)
+	}
+	// Subprojeto de subprojeto nao existe.
+	if _, err := ativarSubprojeto(cfg, id, pedido, raiz, ""); err == nil {
+		t.Fatal("subprojeto nao pode ter subprojeto")
+	}
+	// Mover o subprojeto sozinho e recusado; mover o pai leva o subprojeto de grupo.
+	if err := moverServico(cfg, id, "web", ""); err == nil {
+		t.Fatal("subprojeto nao se move sozinho")
+	}
+	if err := moverServico(cfg, "api", "web", ""); err != nil {
+		t.Fatal(err)
+	}
+	if cfg.porID(id).Grupo != "web" {
+		t.Fatalf("subprojeto deveria acompanhar o pai de grupo: %q", cfg.porID(id).Grupo)
+	}
+	// Apagar o pai leva o subprojeto, e nada fica apontando para ele.
+	if err := removerServico(cfg, "api"); err != nil {
+		t.Fatal(err)
+	}
+	if cfg.porID(id) != nil {
+		t.Fatal("subprojeto deveria sair junto com o pai")
+	}
+	if contem(cfg.perfilPorID("foco").Servicos, id) {
+		t.Fatal("perfil ficou citando o subprojeto apagado")
+	}
+}
+
+func TestRotaSubprojetos(t *testing.T) {
+	h, g := servidorTeste(t, nil)
+	dir := filepath.Join(g.raiz, "backend") // pasta do projeto "api" no config de teste
+	arquivos := map[string]string{
+		"go.mod":             "module x\n",
+		"main.go":            "package main\n",
+		"docker-compose.yml": "services:\n  redis:\n    image: redis\n    ports:\n      - \"6379:6379\"\n",
+	}
+	for nome, conteudo := range arquivos {
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(dir, nome), []byte(conteudo), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	ler := func() []Descoberta {
+		t.Helper()
+		resp := chamar(t, h, http.MethodGet, "/api/servicos/api/subprojetos", "")
+		if resp.Code != http.StatusOK {
+			t.Fatalf("subprojetos: %d %s", resp.Code, resp.Body)
+		}
+		var lista []Descoberta
+		if err := json.Unmarshal(resp.Body.Bytes(), &lista); err != nil {
+			t.Fatal(err)
+		}
+		return lista
+	}
+	lista := ler()
+	if len(lista) != 1 || lista[0].Nome != "redis" || lista[0].Ativo != "" || !lista[0].Esperar {
+		t.Fatalf("lista = %+v", lista)
+	}
+
+	corpo, _ := json.Marshal(PedidoSubprojeto{Esperar: true, Entrada: EntradaServico{
+		Nome: "redis", Tipo: TipoDocker, Compose: lista[0].Compose, Container: lista[0].Container,
+		Porta: 6379, Pronto: Checagem{Tipo: "porta", Porta: 6379}, Timeout: 60,
+	}})
+	resp := chamar(t, h, http.MethodPost, "/api/servicos/api/subprojetos", string(corpo))
+	if resp.Code != http.StatusOK {
+		t.Fatalf("ativar: %d %s", resp.Code, resp.Body)
+	}
+	if lista = ler(); lista[0].Ativo == "" {
+		t.Fatalf("depois de ativar, o item deveria vir como ativo: %+v", lista[0])
+	}
+	if resp := chamar(t, h, http.MethodGet, "/api/servicos/db/subprojetos", ""); resp.Code != http.StatusBadRequest {
+		t.Fatalf("servico docker nao tem subprojetos: %d", resp.Code)
+	}
+}
