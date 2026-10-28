@@ -121,6 +121,41 @@ launcher recusa e pede commit ou stash - nada de carregar alteracao para outro b
 querer. A checagem e feita lendo o git na hora, nao pelo retrato em cache do cartao, e o
 nome so vira argumento do `git switch` se estiver na lista do proprio repositorio.
 
+### Painel git
+
+Clicar no resumo do git no cartao (`↓1 3 mexido(s) +10 -2 git ›`), ou em **painel git** no
+menu `⋯`, abre um painel grande com o repositorio do projeto. No topo ficam o branch, o
+upstream, `↓/↑` e os botoes **fetch**, **pull** (`--ff-only`: so avanca, nunca cria merge),
+**pull c/ rebase** e **push** (sem upstream, publica o branch no `origin` ja acompanhando;
+nunca forca). Abas:
+
+- **alteracoes** - arquivos preparados e nao preparados, com a letra do git (`M`, `A`, `D`,
+  `R`; `+` para arquivo novo, `!` para conflito). Clicar mostra o diff com numero de linha;
+  `+`/`−` preparam ou tiram da preparacao, `↶` descarta. Embaixo, a mensagem e os botoes
+  **commit** e **commit e push** (`ctrl+enter` faz o commit). A mensagem fica guardada se o
+  painel for fechado sem commitar.
+- **historico** - os ultimos 80 commits do branch atual, de outro branch ou de todos, com
+  refs, merges e o que ainda **nao foi enviado**; clicar mostra o commit inteiro (`git show`).
+- **branches** - locais (mais recentes primeiro) e os que so existem no remoto, com ultimo
+  commit, `↑/↓` e upstream apagado. Criar branch (leva as alteracoes junto), trocar, ver o
+  historico, **merge no atual** e apagar.
+- **stash** - guardar tudo que esta mexido (inclusive arquivos novos), aplicar, aplicar e
+  remover, apagar.
+- **pull requests** - PRs abertos no GitHub, pelo GitHub CLI (`gh`, precisa estar instalado e
+  com `gh auth login`): branch → base, autor, checks, revisao, conflito e `+/-`; o PR do
+  branch atual vem marcado, e sem PR aparece o atalho para abrir um. Clicar abre no GitHub.
+
+Se um merge ou rebase parar com conflito, o painel avisa e oferece **continuar** (depois de
+resolver e preparar os arquivos) ou **abortar**. O painel se rele sozinho quando o repositorio
+muda por fora (commit no editor, arquivo salvo).
+
+**Tudo que pode perder trabalho pede confirmacao num modal:** descartar alteracoes (arquivo
+fora do git e apagado), pull com rebase, merge, apagar branch (e uma segunda confirmacao se o
+branch tiver commits que nao estao em nenhum outro lugar), apagar stash e abortar
+merge/rebase. Nada vindo do navegador vira argumento solto do git: caminho de arquivo tem que
+estar na lista que o proprio `git status` devolveu, branch tem que estar na lista do
+repositorio, hash tem que ter cara de hash, e todo caminho vai depois de `--`.
+
 Sao tres comandos por repositorio (`status --porcelain=v2`, `diff --shortstat` e `log -1`),
 entao o resultado fica em cache por 20s e as pastas sao consultadas em paralelo; projetos
 que apontam para a mesma pasta compartilham uma consulta. A varredura automatica anda num
@@ -186,6 +221,30 @@ ele espera aquela subida em vez de iniciar o mesmo processo duas vezes. `cancela
   pelo titulo.
 - **Avisos:** erro fica 12s na tela, o resto 5s, e todos fecham no `×`.
 
+## Dois projetos na mesma porta
+
+O front de uma empresa e o de outra, os dois na 8080: a checagem de "pronto" so olha a
+porta, entao com um no ar os dois acendiam. Agora, quando a porta e dividida, o launcher
+descobre **de quem e o processo que esta escutando** e so esse fica `no ar`. O outro
+continua `parado`, com a etiqueta **porta 8080 em uso por <projeto>**.
+
+As pistas, da mais segura para a menos:
+
+1. o processo que escuta descende de um que o launcher segura (modo gerenciado);
+2. a linha de comando de quem escuta, ou de um ancestral, cita a pasta do projeto - e o que
+   resolve node/vue-cli/vite mesmo quando o projeto subiu por fora do launcher;
+3. quem escuta e o Docker, e so um dos projetos da porta e container;
+4. o processo nasceu logo depois de o launcher mandar subir um deles - o que sobra para
+   `go run` em aba do terminal, que nao deixa pasta nenhuma na linha de comando.
+
+Sem pista nenhuma, os dois aparecem `no ar` com a etiqueta **porta dividida com ...**: na
+duvida vale a porta, mas a tela diz que e duvida.
+
+Consequencias praticas: `subir` um projeto com a porta ocupada pelo vizinho falha na hora
+dizendo quem esta nela (antes virava "ja estava no ar"), e `parar` / `forcar parada` num
+projeto nao derruba mais o vizinho que divide a porta com ele. A tabela de processos so e
+lida quando muda quem esta escutando; projeto que nao divide porta nao paga nada.
+
 ## Grupos
 
 As secoes da tela sao editaveis: crie um grupo por empresa ou produto, renomeie, reordene com as setas e **arraste o cartao** de um grupo para
@@ -220,8 +279,8 @@ worker, script) usa a checagem **processo rodando**: fica pronto enquanto o proc
 launcher iniciou estiver de pe. Se faltar algo, o motivo aparece no proprio formulario,
 acima dos botoes.
 
-Porta repetida nao bloqueia o cadastro, so avisa: como a checagem de "pronto" olha a porta,
-dois projetos na mesma porta se confundem.
+Porta repetida nao bloqueia o cadastro, so avisa: os dois nao sobem juntos, e a tela diz
+qual deles esta com a porta (veja "Dois projetos na mesma porta").
 
 ## Modos de execucao (servicos `app`)
 
@@ -310,6 +369,13 @@ Config da primeira versao (sem `grupos`/`perfis`) e migrado sozinho ao abrir.
 | POST | `/api/git/buscar` | `{"ids": [...]}` (vazio = todos) - `git fetch --prune` |
 | GET | `/api/servicos/{id}/branches` | branch atual, se esta limpo e a lista de branches |
 | POST | `/api/servicos/{id}/branch` | `{"branch": "..."}` - `git switch`, so com a copia de trabalho limpa |
+| GET | `/api/servicos/{id}/git` | painel: estado, arquivos alterados, stashes, merge/rebase em andamento |
+| GET | `/api/servicos/{id}/git/diff?caminho=...&preparado=1` | diff de um arquivo da lista |
+| GET | `/api/servicos/{id}/git/historico?ref=...` | ultimos commits (`ref` vazio = branch atual, `*todos` = todos) |
+| GET | `/api/servicos/{id}/git/commits/{hash}` | `git show` do commit |
+| GET | `/api/servicos/{id}/git/branches` | branches com ultimo commit e `↑/↓` |
+| GET | `/api/servicos/{id}/git/prs` | PRs abertos (GitHub CLI) |
+| POST | `/api/servicos/{id}/git/{acao}` | `preparar`, `despreparar`, `descartar`, `commit`, `fetch`, `pull`, `push`, `stash`, `stash-aplicar`, `stash-pop`, `stash-apagar`, `criar-branch`, `apagar-branch`, `merge`, `abortar`, `continuar` |
 | GET | `/api/docker` | estado do engine + containers (do config e os de fora rodando) |
 | POST | `/api/docker/abrir` | abre o Docker Desktop e espera o engine (responde na hora) |
 | POST | `/api/docker/containers/{nome}/{start\|stop\|restart}` | acao no container |

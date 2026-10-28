@@ -42,6 +42,81 @@ const FORM_VAZIO = () => ({
   depende: [], selecionado: true, sugestoes: null, erro: "",
 });
 
+// ------------------------------------------------------------------
+// diff (painel git)
+// ------------------------------------------------------------------
+
+// Acima disso o navegador sofre para desenhar: o resto do diff fica para o terminal.
+const MAX_LINHAS_DIFF = 6000;
+
+// lerDiff transforma a saida do "git diff"/"git show" em linhas com classe e numero da linha
+// no arquivo antigo e no novo, lidos dos cabecalhos "@@ -a,b +c,d @@".
+function lerDiff(texto) {
+  const itens = [];
+  let velho = 0, novo = 0, dentro = false, sobrou = false;
+  const linhas = (texto || "").split("\n");
+  if (linhas.length && linhas[linhas.length - 1] === "") linhas.pop();
+  for (let linha of linhas) {
+    if (itens.length >= MAX_LINHAS_DIFF) { sobrou = true; break; }
+    if (linha.endsWith("\r")) linha = linha.slice(0, -1);
+    const hunk = /^@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@/.exec(linha);
+    if (hunk) {
+      velho = +hunk[1]; novo = +hunk[2]; dentro = true;
+      itens.push({ c: "hunk", t: linha, v: "", n: "" });
+    } else if (linha.startsWith("diff --git") || linha.startsWith("diff --cc")) {
+      dentro = false;
+      itens.push({ c: "arquivo", t: linha.replace(/^diff --git a\/(.*) b\/.*$/, "$1"), v: "", n: "" });
+    } else if (!dentro && /^(index |--- |\+\+\+ )/.test(linha)) {
+      continue; // cabecalho tecnico: o nome do arquivo ja aparece na linha de cima
+    } else if (!dentro || linha.startsWith("\\")) {
+      itens.push({ c: "meta", t: linha, v: "", n: "" });
+    } else if (linha.startsWith("+")) {
+      itens.push({ c: "add", t: linha, v: "", n: novo++ });
+    } else if (linha.startsWith("-")) {
+      itens.push({ c: "del", t: linha, v: velho++, n: "" });
+    } else {
+      itens.push({ c: "ctx", t: linha, v: velho++, n: novo++ });
+    }
+  }
+  // Congelado: o Vue nao precisa vigiar milhares de linhas que nunca mudam.
+  return Object.freeze({ itens: Object.freeze(itens), sobrou });
+}
+
+// Componente proprio para o diff: a tela inteira e um componente so, e sem isso cada tecla
+// digitada na mensagem do commit redesenharia todas as linhas do diff.
+const VisorDiff = {
+  props: { texto: String, cortado: Boolean, vazio: String },
+  computed: {
+    linhas() { return lerDiff(this.texto); },
+  },
+  template: `
+    <div class="visor-diff">
+      <div v-if="!texto" class="diff-vazio">{{ vazio }}</div>
+      <template v-else>
+        <div v-for="(l, i) in linhas.itens" :key="i" class="dl" :class="l.c"><span class="nv">{{ l.v }}</span><span class="nn">{{ l.n }}</span><span class="tx">{{ l.t }}</span></div>
+        <div v-if="linhas.sobrou || cortado" class="diff-corte">diff grande demais - mostrando so o comeco.</div>
+      </template>
+    </div>`,
+};
+
+// "2 hours ago" do git vira "ha 2 h".
+const UNIDADES_GIT = { second: ["s", "s"], minute: ["min", "min"], hour: ["h", "h"], day: ["dia", "dias"],
+  week: ["semana", "semanas"], month: ["mes", "meses"], year: ["ano", "anos"] };
+function quandoPt(texto) {
+  if (!texto) return "";
+  const t = texto.replace(/ ago$/, "").replace(/(\d+) (second|minute|hour|day|week|month|year)s?/g,
+    (_, n, u) => `${n} ${UNIDADES_GIT[u][n === "1" ? 0 : 1]}`);
+  return t === texto ? texto : "ha " + t;
+}
+
+const ABAS_GIT = [
+  { id: "alteracoes", rotulo: "alteracoes" },
+  { id: "historico", rotulo: "historico" },
+  { id: "branches", rotulo: "branches" },
+  { id: "stash", rotulo: "stash" },
+  { id: "prs", rotulo: "pull requests" },
+];
+
 createApp({
   data() {
     return {
@@ -65,6 +140,8 @@ createApp({
       docker: { rodando: false, iniciando: false, containers: [], mensagem: "verificando..." },
       git: {},
       buscandoGit: false,
+      abasGit: ABAS_GIT,
+      rascunhos: {}, // mensagem de commit por projeto: fechar o painel nao joga o texto fora
       faltando: [],
       filtro: "",
       filtroStatus: "", // "" | pronto | andando | falha
@@ -119,7 +196,8 @@ createApp({
       if (t.tipo === "pasta") return "escolher pasta";
       if (t.tipo === "perfil") return `perfil · ${t.perfil.nome}`;
       if (t.tipo === "branch") return `trocar de branch · ${t.servico.nome}`;
-      if (t.tipo === "confirmar") return "confirmar";
+      if (t.tipo === "git") return `git · ${t.servico.nome}`;
+      if (t.tipo === "confirmar") return t.titulo || "confirmar";
       return t.titulo || "";
     },
     // O erro fica dentro do modal, e nao num aviso: aviso some em 6s e o formulario
@@ -176,7 +254,11 @@ createApp({
       if (texto) {
         try { corpo = JSON.parse(texto); } catch { corpo = { erro: texto }; }
       }
-      if (!resp.ok) throw new Error(corpo.erro || `HTTP ${resp.status}`);
+      if (!resp.ok) {
+        const erro = new Error(corpo.erro || `HTTP ${resp.status}`);
+        erro.corpo = corpo; // o painel git manda o retrato relido junto com o erro
+        throw erro;
+      }
       return corpo;
     },
     enviar(url, corpo, metodo = "POST") {
@@ -205,6 +287,11 @@ createApp({
       if (e.status === "esperando") return e.mensagem && e.mensagem !== "na fila" ? e.mensagem : rotulo;
       if (this.familia(e.status) === "falha") return rotulo;
       return e.mensagem ? `${rotulo} · ${e.mensagem}` : rotulo;
+    },
+    // A etiqueta mostra so o essencial ("porta 8080 em uso por X"); a frase inteira fica no
+    // tooltip.
+    disputaCurta(id) {
+      return (this.estado(id).disputa || "").split(" - ")[0];
     },
     motivo(id) {
       const e = this.estado(id);
@@ -447,6 +534,429 @@ createApp({
       if (g.erro) partes.push("erro: " + g.erro);
       return partes.join("\n");
     },
+
+    // ------------------------------------------------------------------
+    // painel git (modal grande por projeto)
+    // ------------------------------------------------------------------
+    async abrirPainelGit(s, aba = "alteracoes") {
+      this.menuAberto = null;
+      this.abrir({
+        tipo: "git", servico: s, aba, painel: null, carregando: true, ocupado: "", erro: "", saida: "",
+        sel: null, diff: "", diffCortado: false, carregandoDiff: false,
+        mensagem: this.rascunhos[s.id] || "",
+        historico: null, refHistorico: "", commitSel: "", commitDiff: "", commitCortado: false, carregandoHist: false,
+        branches: null, carregandoBranches: false, novoBranch: "", filtroBranch: "",
+        prs: null, erroPrs: "", carregandoPrs: false,
+        stashMsg: "",
+      });
+      const modal = this.topo; // o proxy reativo
+      await this.recarregarPainel(modal);
+      this.trocarAba(modal, aba);
+    },
+
+    urlGit(m, resto = "") {
+      return `/api/servicos/${encodeURIComponent(m.servico.id)}/git${resto}`;
+    },
+
+    estadoPainel(m) {
+      return (m.painel && m.painel.estado) || {};
+    },
+
+    async recarregarPainel(m) {
+      m.carregando = true;
+      try {
+        m.painel = await this.pedir(this.urlGit(m));
+        m.erro = "";
+        this.revalidarSelecao(m);
+      } catch (err) {
+        m.erro = err.message;
+      } finally {
+        m.carregando = false;
+      }
+    },
+
+    // Botao de reler: tudo que ja foi carregado em alguma aba e lido de novo.
+    async recarregarTudo(m) {
+      await this.recarregarPainel(m);
+      m.historico = null;
+      m.branches = null;
+      m.prs = null;
+      m.erroPrs = "";
+      this.trocarAba(m, m.aba);
+    },
+
+    // Com o painel aberto, um commit feito no editor (ou um arquivo salvo) chega pelo evento
+    // "git" do servidor: o painel se rele sozinho, sem precisar clicar em nada.
+    sincronizarPainelGit(estados) {
+      const m = this.modais.find((x) => x.tipo === "git");
+      if (!m || m.ocupado || m.carregando || !m.painel) return;
+      const novo = estados[m.servico.id];
+      if (!novo) return;
+      const chave = (e) => [e.branch, e.upstream, e.frente, e.atras, e.preparados, e.modificados,
+        e.nao_rastreados, e.conflitos, e.adicoes, e.remocoes, e.commit && e.commit.hash].join("|");
+      if (chave(novo) !== chave(m.painel.estado || {})) {
+        this.recarregarPainel(m);
+        m.historico = null;
+        if (m.aba === "historico") this.carregarHistorico(m);
+      }
+    },
+
+    trocarAba(m, aba) {
+      if (m.aba !== aba) m.erro = ""; // erro de outra aba so confundiria
+      m.aba = aba;
+      if (aba === "historico") {
+        if (!m.historico) this.carregarHistorico(m);
+        if (!m.branches) this.carregarBranches(m); // para o seletor de branch
+      } else if (aba === "branches" && !m.branches) {
+        this.carregarBranches(m);
+      } else if (aba === "prs" && !m.prs && !m.carregandoPrs) {
+        this.carregarPrs(m);
+      }
+    },
+
+    contaAba(m, aba) {
+      if (!m.painel) return 0;
+      if (aba === "alteracoes") return m.painel.arquivos.length;
+      if (aba === "stash") return m.painel.stashes.length;
+      if (aba === "prs") return m.prs ? m.prs.prs.length : 0;
+      return 0;
+    },
+
+    // ---- alteracoes ----
+    preparados(m) {
+      return ((m.painel && m.painel.arquivos) || []).filter((a) => a.indice && !a.conflito);
+    },
+    naoPreparados(m) {
+      return ((m.painel && m.painel.arquivos) || []).filter((a) => a.trabalho);
+    },
+    nomeArquivo(caminho) {
+      return caminho.split("/").pop();
+    },
+    pastaArquivo(caminho) {
+      const i = caminho.lastIndexOf("/");
+      return i < 0 ? "" : caminho.slice(0, i);
+    },
+    // Letra que aparece na lista: a do git, menos para arquivo novo (+) e conflito (!).
+    letraArquivo(a, preparado) {
+      if (a.conflito) return "!";
+      const l = preparado ? a.indice : a.trabalho;
+      return l === "?" ? "+" : l;
+    },
+    classeLetra(a, preparado) {
+      const l = this.letraArquivo(a, preparado);
+      return { "+": "novo", A: "novo", M: "mod", D: "del", R: "ren", C: "ren", "!": "conf" }[l] || "mod";
+    },
+    descricaoArquivo(a, preparado) {
+      if (a.conflito) return "em conflito";
+      const l = preparado ? a.indice : a.trabalho;
+      return { "?": "novo, fora do git", A: "adicionado", M: "modificado", D: "apagado", R: "renomeado",
+        C: "copiado", T: "mudou de tipo" }[l] || l;
+    },
+    selecionado(m, a, preparado) {
+      return m.sel && m.sel.caminho === a.caminho && m.sel.preparado === preparado;
+    },
+
+    async verDiff(m, a, preparado) {
+      m.sel = { caminho: a.caminho, preparado };
+      m.carregandoDiff = true;
+      m.diff = "";
+      const pedido = m.sel;
+      try {
+        const r = await this.pedir(this.urlGit(m,
+          `/diff?caminho=${encodeURIComponent(a.caminho)}&preparado=${preparado ? 1 : 0}`));
+        // Clique rapido em outro arquivo: a resposta antiga nao pode sobrescrever a nova.
+        if (m.sel !== pedido) return;
+        m.diff = r.diff;
+        m.diffCortado = r.cortado;
+      } catch (err) {
+        if (m.sel === pedido) m.erro = err.message;
+      } finally {
+        if (m.sel === pedido) m.carregandoDiff = false;
+      }
+    },
+
+    // Depois de reler o painel: o arquivo aberto continua do mesmo lado? Rele o diff. Saiu
+    // da lista (commitado, descartado)? Fecha.
+    revalidarSelecao(m) {
+      if (!m.sel) return;
+      const lista = m.sel.preparado ? this.preparados(m) : this.naoPreparados(m);
+      const outra = m.sel.preparado ? this.naoPreparados(m) : this.preparados(m);
+      const a = lista.find((x) => x.caminho === m.sel.caminho);
+      // Preparou ou tirou da preparacao: o diff acompanha o arquivo para o outro lado.
+      const mudou = !a && outra.find((x) => x.caminho === m.sel.caminho);
+      if (a) {
+        this.verDiff(m, a, m.sel.preparado);
+      } else if (mudou) {
+        this.verDiff(m, mudou, !m.sel.preparado);
+      } else {
+        m.sel = null;
+        m.diff = "";
+      }
+    },
+
+    // acaoGit e o caminho unico das acoes que mudam o repositorio. opcoes.confirmar abre o
+    // modal de confirmacao antes; opcoes.ok vira aviso verde no fim.
+    async acaoGit(m, acao, corpo = {}, opcoes = {}) {
+      if (m.ocupado) return false;
+      if (opcoes.confirmar) {
+        const ok = await this.confirmar(opcoes.confirmar, { titulo: opcoes.titulo, botao: opcoes.botao });
+        if (!ok) return false;
+      }
+      m.ocupado = acao;
+      m.erro = "";
+      m.saida = "";
+      try {
+        const r = await this.enviar(this.urlGit(m, `/${acao}`), corpo);
+        m.painel = r.painel;
+        if (r.git) this.git = r.git;
+        m.saida = r.saida || "";
+        if (opcoes.ok) this.avisar(opcoes.ok, "ok");
+        return true;
+      } catch (err) {
+        m.erro = err.message;
+        const painel = err.corpo && err.corpo.painel;
+        if (painel && painel.estado && painel.estado.repo) m.painel = painel;
+        return false;
+      } finally {
+        m.ocupado = "";
+        this.revalidarSelecao(m);
+        // O que mudou no repositorio pode mudar historico e branches: rele o que estiver a
+        // vista e esquece o resto.
+        m.historico = null;
+        m.branches = null;
+        if (m.aba === "historico" || m.aba === "branches") this.trocarAba(m, m.aba);
+      }
+    },
+
+    preparar(m, arquivos) {
+      return this.acaoGit(m, "preparar", { caminhos: arquivos.map((a) => a.caminho) });
+    },
+    despreparar(m, arquivos) {
+      return this.acaoGit(m, "despreparar", { caminhos: arquivos.map((a) => a.caminho) });
+    },
+
+    descartar(m, arquivos) {
+      const lista = arquivos.filter((a) => !a.conflito);
+      if (!lista.length) return;
+      const novos = lista.filter((a) => a.trabalho === "?").length;
+      let texto;
+      if (lista.length === 1) {
+        texto = novos
+          ? `${lista[0].caminho} nao esta no git: descartar APAGA o arquivo do disco.`
+          : `Descartar as alteracoes de ${lista[0].caminho}? O arquivo volta a ser como esta no ultimo commit (ou no que ja foi preparado).`;
+      } else {
+        texto = `Descartar as alteracoes de ${lista.length} arquivo(s)?` +
+          (novos ? ` ${novos} arquivo(s) novo(s), fora do git, serao APAGADOS do disco.` : "") +
+          " O que ja foi preparado continua.";
+      }
+      return this.acaoGit(m, "descartar", { caminhos: lista.map((a) => a.caminho) }, {
+        confirmar: texto + " Isso nao tem volta.", titulo: "descartar alteracoes", botao: "descartar",
+      });
+    },
+
+    async commitar(m, push) {
+      if (!m.mensagem.trim() || !this.preparados(m).length) return;
+      const ok = await this.acaoGit(m, "commit", { mensagem: m.mensagem, push }, {
+        ok: push ? "commit feito e enviado." : "commit feito.",
+      });
+      if (ok) {
+        m.mensagem = "";
+        delete this.rascunhos[m.servico.id];
+      }
+    },
+
+    // ---- sincronizar com o remoto ----
+    gitPull(m, rebase) {
+      if (!rebase) return this.acaoGit(m, "pull", {}, { ok: "pull concluido." });
+      return this.acaoGit(m, "pull", { rebase: true }, {
+        titulo: "pull com rebase",
+        botao: "puxar com rebase",
+        confirmar: "O rebase reescreve os seus commits locais que ainda nao foram enviados, " +
+          "reaplicando cada um em cima do que veio do remoto. Se houver conflito, o rebase fica " +
+          "parado esperando voce resolver (ou abortar). Continuar?",
+        ok: "pull com rebase concluido.",
+      });
+    },
+    gitPush(m) {
+      return this.acaoGit(m, "push", {}, { ok: "push concluido." });
+    },
+    gitAbortar(m) {
+      const tipo = m.painel.em_andamento;
+      return this.acaoGit(m, "abortar", {}, {
+        titulo: `abortar ${tipo}`,
+        botao: `abortar ${tipo}`,
+        confirmar: `O repositorio volta ao estado de antes do ${tipo}. O que voce ja resolveu nos conflitos se perde.`,
+      });
+    },
+
+    // ---- historico ----
+    async carregarHistorico(m) {
+      m.carregandoHist = true;
+      try {
+        const ref = m.refHistorico ? `?ref=${encodeURIComponent(m.refHistorico)}` : "";
+        m.historico = await this.pedir(this.urlGit(m, `/historico${ref}`));
+        const ainda = m.historico.find((c) => c.hash === m.commitSel);
+        if (!ainda && m.historico.length) this.verCommit(m, m.historico[0]);
+        if (!m.historico.length) { m.commitSel = ""; m.commitDiff = ""; }
+      } catch (err) {
+        m.erro = err.message;
+        m.historico = [];
+      } finally {
+        m.carregandoHist = false;
+      }
+    },
+    recarregarHistorico(m) {
+      m.historico = null;
+      m.commitSel = "";
+      this.carregarHistorico(m);
+    },
+    async verCommit(m, c) {
+      m.commitSel = c.hash;
+      m.commitDiff = "";
+      try {
+        const r = await this.pedir(this.urlGit(m, `/commits/${c.hash}`));
+        if (m.commitSel !== c.hash) return;
+        m.commitDiff = r.diff;
+        m.commitCortado = r.cortado;
+      } catch (err) {
+        m.erro = err.message;
+      }
+    },
+
+    // ---- branches ----
+    async carregarBranches(m) {
+      m.carregandoBranches = true;
+      try {
+        m.branches = await this.pedir(this.urlGit(m, "/branches"));
+      } catch (err) {
+        m.erro = err.message;
+        m.branches = [];
+      } finally {
+        m.carregandoBranches = false;
+      }
+    },
+    branchesFiltrados(m) {
+      const f = (m.filtroBranch || "").trim().toLowerCase();
+      return (m.branches || []).filter((b) => !f || b.nome.toLowerCase().includes(f));
+    },
+    rotuloBranch(b) {
+      return b.remoto ? `${b.remoto}/${b.nome}` : b.nome;
+    },
+    async criarBranch(m) {
+      const nome = m.novoBranch.trim();
+      if (!nome) return;
+      const ok = await this.acaoGit(m, "criar-branch", { nome }, { ok: `branch ${nome} criado - voce ja esta nele.` });
+      if (ok) m.novoBranch = "";
+    },
+    async trocarParaBranch(m, b) {
+      if (m.ocupado) return;
+      m.ocupado = "trocar";
+      m.erro = "";
+      try {
+        const r = await this.enviar(`/api/servicos/${encodeURIComponent(m.servico.id)}/branch`, { branch: b.nome });
+        this.git = r.git;
+        this.avisar(`${m.servico.nome} agora esta em ${b.nome}.`, "ok");
+      } catch (err) {
+        m.erro = err.message;
+      } finally {
+        m.ocupado = "";
+      }
+      await this.recarregarPainel(m);
+      m.historico = null;
+      m.refHistorico = "";
+      this.carregarBranches(m);
+    },
+    mergeBranch(m, b) {
+      const atual = this.estadoPainel(m).branch;
+      return this.acaoGit(m, "merge", { nome: b.nome }, {
+        titulo: "merge",
+        botao: `integrar ${b.nome}`,
+        confirmar: `Integrar ${this.rotuloBranch(b)} em ${atual} (git merge)? Se houver conflito, o merge ` +
+          "fica parado esperando voce resolver os arquivos ou abortar.",
+        ok: `${b.nome} integrado em ${atual}.`,
+      });
+    },
+    async apagarBranch(m, b) {
+      const ok = await this.acaoGit(m, "apagar-branch", { nome: b.nome }, {
+        titulo: "apagar branch",
+        botao: "apagar branch",
+        confirmar: `Apagar o branch local ${b.nome}? O branch no remoto (se existir) nao e tocado.`,
+        ok: `branch ${b.nome} apagado.`,
+      });
+      // Branch com commit que so existe nele: segunda confirmacao, bem explicita.
+      if (!ok && m.erro.includes("nao foram integrados")) {
+        m.erro = "";
+        await this.acaoGit(m, "apagar-branch", { nome: b.nome, forcar: true }, {
+          titulo: "apagar mesmo assim?",
+          botao: "apagar e perder os commits",
+          confirmar: `${b.nome} tem commits que nao estao em nenhum outro branch. Apagar assim faz esses ` +
+            "commits sumirem. Tem certeza?",
+          ok: `branch ${b.nome} apagado.`,
+        });
+      }
+    },
+    verHistoricoDe(m, b) {
+      m.refHistorico = b.atual ? "" : b.ref;
+      m.historico = null;
+      m.commitSel = "";
+      this.trocarAba(m, "historico");
+    },
+
+    // ---- stash ----
+    rotuloStash(s) {
+      return `stash@{${s.indice}}`;
+    },
+    async guardarStash(m) {
+      const ok = await this.acaoGit(m, "stash", { mensagem: m.stashMsg }, { ok: "alteracoes guardadas no stash." });
+      if (ok) m.stashMsg = "";
+    },
+    aplicarStash(m, s, remover) {
+      return this.acaoGit(m, remover ? "stash-pop" : "stash-aplicar", { indice: s.indice }, {
+        ok: remover ? "stash aplicado e removido." : "stash aplicado.",
+      });
+    },
+    apagarStash(m, s) {
+      return this.acaoGit(m, "stash-apagar", { indice: s.indice }, {
+        titulo: "apagar stash",
+        botao: "apagar stash",
+        confirmar: `Apagar ${this.rotuloStash(s)} (${s.resumo})? As alteracoes guardadas nele se perdem.`,
+        ok: "stash apagado.",
+      });
+    },
+
+    // ---- pull requests ----
+    async carregarPrs(m) {
+      m.carregandoPrs = true;
+      m.erroPrs = "";
+      try {
+        m.prs = await this.pedir(this.urlGit(m, "/prs"));
+      } catch (err) {
+        m.erroPrs = err.message;
+      } finally {
+        m.carregandoPrs = false;
+      }
+    },
+    prDoBranch(m) {
+      const branch = this.estadoPainel(m).branch;
+      return m.prs && m.prs.prs.find((p) => p.branch === branch);
+    },
+    linkNovoPR(m) {
+      const branch = this.estadoPainel(m).branch;
+      if (!m.prs || !m.prs.url || !branch || branch === m.prs.padrao) return "";
+      return `${m.prs.url}/compare/${branch.split("/").map(encodeURIComponent).join("/")}?expand=1`;
+    },
+    rotuloChecks(c) {
+      return { ok: "checks ok", falhou: "checks falharam", pendente: "checks rodando" }[c] || c;
+    },
+    tempoRelativo(iso) {
+      const s = (Date.now() - Date.parse(iso)) / 1000;
+      if (!isFinite(s)) return "";
+      if (s < 3600) return `ha ${Math.max(1, Math.round(s / 60))} min`;
+      if (s < 86400) return `ha ${Math.round(s / 3600)} h`;
+      const d = Math.round(s / 86400);
+      return `ha ${d} ${d === 1 ? "dia" : "dias"}`;
+    },
+    quandoPt,
 
     // ------------------------------------------------------------------
     // docker
@@ -952,6 +1462,7 @@ createApp({
     },
     fecharTopo(concluido) {
       const modal = this.modais.pop();
+      if (modal && modal.tipo === "git") this.rascunhos[modal.servico.id] = modal.mensagem;
       if (modal && !concluido && modal.resolver) modal.resolver(null);
     },
     // Clique fora fecha os modais leves. O formulario de projeto nao: um clique torto jogaria
@@ -971,9 +1482,11 @@ createApp({
       this.fecharTopo(true);
       modal.resolver(valor || null);
     },
-    confirmar(texto) {
+    // opcoes: { titulo, botao } - o botao diz o que vai acontecer ("apagar branch"), em vez
+    // de um "confirmar" generico.
+    confirmar(texto, opcoes = {}) {
       return new Promise((resolver) => {
-        this.abrir({ tipo: "confirmar", texto, resolver: (v) => resolver(!!v) });
+        this.abrir({ tipo: "confirmar", texto, titulo: opcoes.titulo, botao: opcoes.botao, resolver: (v) => resolver(!!v) });
       });
     },
 
@@ -997,6 +1510,7 @@ createApp({
         } else if (evento.tipo === "git") {
           this.git = evento.git;
           this.buscandoGit = false;
+          this.sincronizarPainelGit(evento.git);
         } else if (evento.tipo === "aviso") {
           this.avisar(evento.texto, evento.erro ? "erro" : "");
         } else if (evento.tipo === "fim") {
@@ -1054,4 +1568,4 @@ createApp({
       this.avisos = this.avisos.filter((a) => a.id !== id);
     },
   },
-}).mount("#app");
+}).component("visor-diff", VisorDiff).mount("#app");

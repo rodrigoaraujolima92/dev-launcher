@@ -25,6 +25,10 @@ type ExecutorSO struct {
 
 	mu    sync.Mutex
 	procs map[string]*exec.Cmd
+	// iniciados guarda quando cada servico foi mandado subir, e donos a ultima decisao de
+	// quem esta atras de cada porta disputada (portas.go).
+	iniciados map[string]time.Time
+	donos     map[int]donoEmCache
 }
 
 func NovoExecutorSO(raiz, rede string, docker SondaDocker) *ExecutorSO {
@@ -33,6 +37,8 @@ func NovoExecutorSO(raiz, rede string, docker SondaDocker) *ExecutorSO {
 		rede:      rede,
 		docker:    docker,
 		procs:     map[string]*exec.Cmd{},
+		iniciados: map[string]time.Time{},
+		donos:     map[int]donoEmCache{},
 		aoLogar:   func(string, string) {},
 		aoTerPID:  func(string, int) {},
 		aoEncerra: func(string, string) {},
@@ -68,6 +74,9 @@ func (e *ExecutorSO) Pronto(ctx context.Context, s *Servico) bool {
 }
 
 func (e *ExecutorSO) Iniciar(ctx context.Context, s *Servico) error {
+	e.mu.Lock()
+	e.iniciados[s.ID] = time.Now()
+	e.mu.Unlock()
 	switch s.Tipo {
 	case TipoDocker:
 		return e.iniciarDocker(ctx, s)
@@ -226,6 +235,12 @@ func (e *ExecutorSO) Parar(ctx context.Context, s *Servico) error {
 	pids := pidsNaPorta(ctx, s.Porta)
 	if len(pids) == 0 {
 		return nil // ja esta parado
+	}
+	// Porta dividida com outro projeto, e quem esta nela e o outro: matar "quem segura a
+	// porta" derrubaria o vizinho. Deste aqui nao ha nada rodando.
+	if dono := e.portaDeOutro(s.Porta, pids, s.ID); dono != "" {
+		e.logar(s.ID, "a porta %d esta com %s - nada deste projeto para parar", s.Porta, dono)
+		return nil
 	}
 	for _, pid := range pids {
 		e.logar(s.ID, "> taskkill /T /F no PID %d (porta %d)", pid, s.Porta)

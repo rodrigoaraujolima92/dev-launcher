@@ -155,6 +155,11 @@
                 pasta nao encontrada
               </span>
               <span class="selo" :data-status="estado(s.id).status">{{ textoEstado(s.id) }}</span>
+              <!-- Porta dividida com outro projeto: diz com quem ela esta, para "no ar" nunca
+                   acender nos dois por causa de um so. -->
+              <span v-if="estado(s.id).disputa" class="etiqueta disputa" :title="estado(s.id).disputa">
+                {{ disputaCurta(s.id) }}
+              </span>
             </div>
 
             <!-- O motivo da falha fica no cartao, com atalho para o log: e a primeira coisa que
@@ -178,14 +183,19 @@
                   <circle cx="4" cy="3.5" r="1.75"/><circle cx="4" cy="12.5" r="1.75"/><circle cx="12" cy="5" r="1.75"/>
                   <path d="M4 5.25v5.5M12 6.75C12 9.5 4 8.5 4 10.75"/>
                 </svg>{{ git[s.id].branch || 'detached' }}</button>
-              <span v-if="git[s.id].atras" class="atras" title="commits do remoto que faltam aqui">↓{{ git[s.id].atras }}</span>
-              <span v-if="git[s.id].frente" class="frente" title="commits locais que o remoto nao tem">↑{{ git[s.id].frente }}</span>
-              <span v-if="!git[s.id].upstream" class="sem-upstream">sem upstream</span>
-              <span v-if="git[s.id].conflitos" class="conflito">{{ git[s.id].conflitos }} conflito(s)</span>
-              <span v-if="mexidos(git[s.id])" class="mexido">{{ mexidos(git[s.id]) }} mexido(s)</span>
-              <span v-if="git[s.id].adicoes" class="mais">+{{ git[s.id].adicoes }}</span>
-              <span v-if="git[s.id].remocoes" class="menos">-{{ git[s.id].remocoes }}</span>
-              <span v-if="limpoEEmDia(git[s.id])" class="em-dia">em dia</span>
+              <!-- O resumo inteiro abre o painel git: e ali que se resolve o que ele aponta. -->
+              <button type="button" class="resumo-git" title="abrir o painel git (alteracoes, commit, pull, push, historico, PRs)"
+                      @click="abrirPainelGit(s)">
+                <span v-if="git[s.id].atras" class="atras">↓{{ git[s.id].atras }}</span>
+                <span v-if="git[s.id].frente" class="frente">↑{{ git[s.id].frente }}</span>
+                <span v-if="!git[s.id].upstream" class="sem-upstream">sem upstream</span>
+                <span v-if="git[s.id].conflitos" class="conflito">{{ git[s.id].conflitos }} conflito(s)</span>
+                <span v-if="mexidos(git[s.id])" class="mexido">{{ mexidos(git[s.id]) }} mexido(s)</span>
+                <span v-if="git[s.id].adicoes" class="mais">+{{ git[s.id].adicoes }}</span>
+                <span v-if="git[s.id].remocoes" class="menos">-{{ git[s.id].remocoes }}</span>
+                <span v-if="limpoEEmDia(git[s.id])" class="em-dia">em dia</span>
+                <span class="abrir-painel" aria-hidden="true">git ›</span>
+              </button>
             </div>
 
             <div class="dependencias">
@@ -238,6 +248,12 @@
                   <button type="button" @click="abrirNoSistema(s, 'pasta')">abrir pasta</button>
                   <button type="button" @click="abrirNoSistema(s, 'editor')">abrir no VS Code</button>
                   <button type="button" @click="copiarComando(s)">copiar comando</button>
+                  <button v-if="git[s.id] && git[s.id].repo" type="button" @click="abrirPainelGit(s)">
+                    painel git
+                  </button>
+                  <button v-if="git[s.id] && git[s.id].repo" type="button" @click="abrirPainelGit(s, 'prs')">
+                    pull requests
+                  </button>
                   <button v-if="git[s.id] && git[s.id].repo" type="button" @click="buscarGit([s.id])">
                     git fetch deste projeto
                   </button>
@@ -359,7 +375,7 @@
   <!-- ---------------- modais ---------------- -->
   <div class="modal" v-if="modais.length">
     <div class="modal-fundo" @click="fecharPeloFundo"></div>
-    <div class="modal-caixa" role="dialog" aria-modal="true">
+    <div class="modal-caixa" :class="{ larga: topo.tipo === 'git' }" role="dialog" aria-modal="true">
       <header class="modal-topo">
         <h2>{{ tituloModal }}</h2>
         <button type="button" class="mini" @click="fecharTopo()" aria-label="fechar">esc</button>
@@ -402,6 +418,262 @@
             </button>
           </div>
           <p class="nota-modal">branch que so existe no remoto aparece conforme o ultimo git fetch; trocar para ele cria o local.</p>
+        </template>
+
+        <!-- painel git -->
+        <template v-else-if="topo.tipo === 'git'">
+          <div class="git-barra">
+            <button type="button" class="ramo-painel" title="ver e trocar branches" @click="trocarAba(topo, 'branches')">
+              <svg class="ico-ramo" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true">
+                <circle cx="4" cy="3.5" r="1.75"/><circle cx="4" cy="12.5" r="1.75"/><circle cx="12" cy="5" r="1.75"/>
+                <path d="M4 5.25v5.5M12 6.75C12 9.5 4 8.5 4 10.75"/>
+              </svg>{{ estadoPainel(topo).branch || '...' }}</button>
+            <span v-if="estadoPainel(topo).upstream" class="upstream" title="branch remoto acompanhado">⇄ {{ estadoPainel(topo).upstream }}</span>
+            <span v-else-if="topo.painel" class="upstream sem" title="o primeiro push publica o branch no remoto">sem upstream</span>
+            <span v-if="estadoPainel(topo).atras" class="atras" title="commits do remoto que faltam aqui">↓{{ estadoPainel(topo).atras }}</span>
+            <span v-if="estadoPainel(topo).frente" class="frente" title="commits locais que o remoto nao tem">↑{{ estadoPainel(topo).frente }}</span>
+            <span class="espaco"></span>
+            <button type="button" class="mini" :disabled="!!topo.ocupado" title="git fetch --all --prune: ve o que ha de novo no remoto sem mexer em nada"
+                    @click="acaoGit(topo, 'fetch')">{{ topo.ocupado === 'fetch' ? 'buscando...' : 'fetch' }}</button>
+            <button type="button" class="mini" :disabled="!!topo.ocupado" title="git pull --ff-only: so avanca, nunca cria merge"
+                    @click="gitPull(topo, false)">{{ topo.ocupado === 'pull' ? 'puxando...' : 'pull' }}<span v-if="estadoPainel(topo).atras" class="atras"> ↓{{ estadoPainel(topo).atras }}</span></button>
+            <button type="button" class="mini" :disabled="!!topo.ocupado" title="git pull --rebase (pede confirmacao)"
+                    @click="gitPull(topo, true)">pull c/ rebase</button>
+            <button type="button" class="mini acao-push" :disabled="!!topo.ocupado" title="git push (sem upstream, publica o branch no origin)"
+                    @click="gitPush(topo)">{{ topo.ocupado === 'push' ? 'enviando...' : 'push' }}<span v-if="estadoPainel(topo).frente"> ↑{{ estadoPainel(topo).frente }}</span></button>
+            <button type="button" class="mini" :disabled="topo.carregando" title="reler o repositorio" aria-label="reler o repositorio"
+                    @click="recarregarTudo(topo)">↻</button>
+          </div>
+
+          <div v-if="topo.painel && topo.painel.em_andamento" class="git-alerta">
+            <span>
+              <b>{{ topo.painel.em_andamento }} em andamento.</b>
+              {{ estadoPainel(topo).conflitos
+                 ? estadoPainel(topo).conflitos + ' arquivo(s) em conflito: edite, prepare cada um e clique em continuar.'
+                 : 'conflitos resolvidos - pode continuar.' }}
+            </span>
+            <button type="button" class="mini" :disabled="!!topo.ocupado" @click="acaoGit(topo, 'continuar', {}, { ok: topo.painel.em_andamento + ' concluido.' })">continuar</button>
+            <button type="button" class="mini perigo" :disabled="!!topo.ocupado" @click="gitAbortar(topo)">abortar</button>
+          </div>
+
+          <nav class="git-abas" role="tablist">
+            <button v-for="a in abasGit" :key="a.id" type="button" role="tab" class="git-aba"
+                    :aria-selected="topo.aba === a.id ? 'true' : 'false'" @click="trocarAba(topo, a.id)">
+              {{ a.rotulo }}<span v-if="contaAba(topo, a.id)" class="conta">{{ contaAba(topo, a.id) }}</span>
+            </button>
+          </nav>
+
+          <!-- alteracoes: lista + commit a esquerda, diff a direita -->
+          <div v-if="topo.aba === 'alteracoes'" class="git-dupla">
+            <div class="git-esq">
+              <div class="git-arquivos">
+                <span v-if="!topo.painel" class="nota-lista">lendo o repositorio...</span>
+                <span v-else-if="!topo.painel.arquivos.length" class="nota-lista">nada mexido - a copia de trabalho esta limpa.</span>
+
+                <template v-if="preparados(topo).length">
+                  <div class="git-secao">
+                    <span>preparados <b>{{ preparados(topo).length }}</b></span>
+                    <button type="button" class="link" :disabled="!!topo.ocupado" @click="acaoGit(topo, 'despreparar', { todos: true })">tirar todos</button>
+                  </div>
+                  <div v-for="a in preparados(topo)" :key="'p:' + a.caminho" class="git-arq" :class="{ sel: selecionado(topo, a, true) }"
+                       :title="(a.origem ? a.origem + ' → ' : '') + a.caminho + ' · ' + descricaoArquivo(a, true)"
+                       @click="verDiff(topo, a, true)">
+                    <span class="letra" :class="'l-' + classeLetra(a, true)">{{ letraArquivo(a, true) }}</span>
+                    <span class="arq-nome">{{ nomeArquivo(a.caminho) }}</span>
+                    <span class="arq-pasta">{{ pastaArquivo(a.caminho) }}</span>
+                    <span class="arq-acoes">
+                      <button type="button" title="tirar da preparacao" aria-label="tirar da preparacao" :disabled="!!topo.ocupado"
+                              @click.stop="despreparar(topo, [a])">−</button>
+                    </span>
+                  </div>
+                </template>
+
+                <template v-if="naoPreparados(topo).length">
+                  <div class="git-secao">
+                    <span>alteracoes <b>{{ naoPreparados(topo).length }}</b></span>
+                    <button type="button" class="link perigo" :disabled="!!topo.ocupado" @click="descartar(topo, naoPreparados(topo))">descartar todas</button>
+                    <button type="button" class="link" :disabled="!!topo.ocupado" @click="acaoGit(topo, 'preparar', { todos: true })">preparar todas</button>
+                  </div>
+                  <div v-for="a in naoPreparados(topo)" :key="'t:' + a.caminho" class="git-arq" :class="{ sel: selecionado(topo, a, false) }"
+                       :title="a.caminho + ' · ' + descricaoArquivo(a, false)"
+                       @click="verDiff(topo, a, false)">
+                    <span class="letra" :class="'l-' + classeLetra(a, false)">{{ letraArquivo(a, false) }}</span>
+                    <span class="arq-nome">{{ nomeArquivo(a.caminho) }}</span>
+                    <span class="arq-pasta">{{ pastaArquivo(a.caminho) }}</span>
+                    <span class="arq-acoes">
+                      <button v-if="!a.conflito" type="button" class="perigo" title="descartar alteracoes (pede confirmacao)" aria-label="descartar alteracoes"
+                              :disabled="!!topo.ocupado" @click.stop="descartar(topo, [a])">↶</button>
+                      <button type="button" :title="a.conflito ? 'marcar conflito como resolvido (preparar)' : 'preparar para o commit'" aria-label="preparar"
+                              :disabled="!!topo.ocupado" @click.stop="preparar(topo, [a])">+</button>
+                    </span>
+                  </div>
+                </template>
+                <p v-if="topo.painel && topo.painel.cortado" class="nota-lista">lista cortada nos primeiros 3000 arquivos.</p>
+              </div>
+
+              <div class="git-commit">
+                <textarea v-model="topo.mensagem" rows="3" aria-label="mensagem do commit"
+                          placeholder="mensagem do commit  (ctrl+enter faz o commit)"
+                          @keydown.ctrl.enter.prevent="commitar(topo, false)" @keydown.meta.enter.prevent="commitar(topo, false)"></textarea>
+                <div class="git-commit-acoes">
+                  <span class="ajuda" v-if="!preparados(topo).length && topo.painel && topo.painel.arquivos.length">prepare (+) o que vai no commit</span>
+                  <button type="button" class="botao" :disabled="!!topo.ocupado || !preparados(topo).length || !topo.mensagem.trim()"
+                          @click="commitar(topo, true)">commit e push</button>
+                  <button type="button" class="botao primario" :disabled="!!topo.ocupado || !preparados(topo).length || !topo.mensagem.trim()"
+                          @click="commitar(topo, false)">{{ topo.ocupado === 'commit' ? 'commitando...' : 'commit' }}<span class="contador" v-if="preparados(topo).length">{{ preparados(topo).length }}</span></button>
+                </div>
+              </div>
+            </div>
+
+            <div class="git-dir">
+              <div class="git-dir-topo" v-if="topo.sel">
+                <span class="mono">{{ topo.sel.caminho }}</span>
+                <span class="chip-git">{{ topo.sel.preparado ? 'preparado' : 'copia de trabalho' }}</span>
+              </div>
+              <visor-diff :texto="topo.diff" :cortado="topo.diffCortado"
+                          :vazio="!topo.sel ? 'escolha um arquivo para ver o que mudou.' : (topo.carregandoDiff ? 'lendo o diff...' : 'sem diferenca de texto (binario ou so permissao).')"></visor-diff>
+            </div>
+          </div>
+
+          <!-- historico: commits a esquerda, o commit escolhido a direita -->
+          <div v-else-if="topo.aba === 'historico'" class="git-dupla">
+            <div class="git-esq">
+              <select v-model="topo.refHistorico" class="git-select" aria-label="historico de qual branch" @change="recarregarHistorico(topo)">
+                <option value="">branch atual ({{ estadoPainel(topo).branch }})</option>
+                <option value="*todos">todos os branches</option>
+                <option v-for="b in (topo.branches || []).filter((b) => !b.atual)" :key="b.ref" :value="b.ref">{{ rotuloBranch(b) }}</option>
+              </select>
+              <div class="git-commits">
+                <span v-if="!topo.historico" class="nota-lista">lendo o historico...</span>
+                <span v-else-if="!topo.historico.length" class="nota-lista">nenhum commit ainda.</span>
+                <button v-for="c in topo.historico || []" :key="c.hash" type="button" class="git-commit-item"
+                        :class="{ sel: topo.commitSel === c.hash }" @click="verCommit(topo, c)">
+                  <span class="c-resumo">{{ c.resumo }}</span>
+                  <span class="c-meta">
+                    <span class="mono hash">{{ c.curto }}</span>{{ c.autor }} · {{ quandoPt(c.quando) }}
+                  </span>
+                  <span class="c-chips" v-if="c.nao_enviado || c.merge || (c.refs && c.refs.length)">
+                    <span v-if="c.nao_enviado" class="chip-git aviso" title="ainda nao esta no remoto">nao enviado</span>
+                    <span v-if="c.merge" class="chip-git">merge</span>
+                    <span v-for="r in c.refs || []" :key="r" class="chip-git ref">{{ r }}</span>
+                  </span>
+                </button>
+              </div>
+            </div>
+            <div class="git-dir">
+              <visor-diff :texto="topo.commitDiff" :cortado="topo.commitCortado"
+                          :vazio="topo.commitSel ? 'lendo o commit...' : 'escolha um commit.'"></visor-diff>
+            </div>
+          </div>
+
+          <!-- branches -->
+          <div v-else-if="topo.aba === 'branches'" class="git-unica">
+            <div class="git-linha-form">
+              <input type="text" v-model="topo.novoBranch" aria-label="nome do novo branch"
+                     :placeholder="'novo branch a partir de ' + (estadoPainel(topo).branch || 'HEAD')" @keydown.enter="criarBranch(topo)">
+              <button type="button" class="botao" :disabled="!!topo.ocupado || !topo.novoBranch.trim()" @click="criarBranch(topo)">criar e trocar</button>
+              <input type="text" v-model="topo.filtroBranch" class="filtro" placeholder="filtrar" aria-label="filtrar branches">
+            </div>
+            <p class="nota-modal">trocar exige a copia de trabalho limpa. criar leva as alteracoes atuais junto para o branch novo.</p>
+            <div class="git-tabela">
+              <span v-if="!topo.branches" class="nota-lista">lendo os branches...</span>
+              <span v-else-if="!branchesFiltrados(topo).length" class="nota-lista">nenhum branch por aqui.</span>
+              <div v-for="b in branchesFiltrados(topo)" :key="b.ref" class="git-linha" :class="{ atual: b.atual }">
+                <div class="l-corpo">
+                  <div class="l-titulo">
+                    <span class="mono">{{ b.nome }}</span>
+                    <span v-if="b.atual" class="chip-git ref">atual</span>
+                    <span v-if="b.remoto" class="chip-git" title="ainda nao existe local: trocar cria o local acompanhando o remoto">so em {{ b.remoto }}</span>
+                    <span v-if="b.sumiu" class="chip-git ruim" title="o branch remoto foi apagado (PR mergeado?)">remoto apagado</span>
+                    <span v-else-if="!b.remoto && !b.upstream" class="chip-git">so local</span>
+                    <span v-if="b.atras" class="atras mono" title="commits do remoto que faltam aqui">↓{{ b.atras }}</span>
+                    <span v-if="b.frente" class="frente mono" title="commits locais que o remoto nao tem">↑{{ b.frente }}</span>
+                  </div>
+                  <div class="l-sub">{{ b.resumo }} <span class="fraco">· <span class="mono">{{ b.hash }}</span> · {{ quandoPt(b.quando) }}</span></div>
+                </div>
+                <div class="l-acoes">
+                  <button type="button" class="mini" @click="verHistoricoDe(topo, b)">historico</button>
+                  <button v-if="!b.atual" type="button" class="mini" :disabled="!!topo.ocupado" @click="trocarParaBranch(topo, b)">trocar</button>
+                  <button v-if="!b.atual" type="button" class="mini" :disabled="!!topo.ocupado" title="git merge deste branch no atual (pede confirmacao)"
+                          @click="mergeBranch(topo, b)">merge no atual</button>
+                  <button v-if="!b.atual && !b.remoto" type="button" class="mini perigo" :disabled="!!topo.ocupado" title="apagar o branch local (pede confirmacao)"
+                          @click="apagarBranch(topo, b)">apagar</button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- stash -->
+          <div v-else-if="topo.aba === 'stash'" class="git-unica">
+            <div class="git-linha-form">
+              <input type="text" v-model="topo.stashMsg" placeholder="descricao do stash (opcional)" aria-label="descricao do stash"
+                     @keydown.enter="guardarStash(topo)">
+              <button type="button" class="botao" :disabled="!!topo.ocupado || !(topo.painel && topo.painel.arquivos.length)"
+                      @click="guardarStash(topo)">guardar alteracoes<span class="contador" v-if="topo.painel && topo.painel.arquivos.length">{{ topo.painel.arquivos.length }}</span></button>
+            </div>
+            <p class="nota-modal">guarda tudo que esta mexido (inclusive arquivos novos) e deixa a copia de trabalho limpa - util para trocar de branch no meio de algo.</p>
+            <div class="git-tabela">
+              <span v-if="topo.painel && !topo.painel.stashes.length" class="nota-lista">nenhum stash guardado.</span>
+              <div v-for="s in (topo.painel ? topo.painel.stashes : [])" :key="s.indice" class="git-linha">
+                <div class="l-corpo">
+                  <div class="l-titulo"><span class="mono">{{ rotuloStash(s) }}</span></div>
+                  <div class="l-sub">{{ s.resumo }} <span class="fraco">· {{ quandoPt(s.quando) }}</span></div>
+                </div>
+                <div class="l-acoes">
+                  <button type="button" class="mini" :disabled="!!topo.ocupado" title="aplica e mantem o stash guardado" @click="aplicarStash(topo, s, false)">aplicar</button>
+                  <button type="button" class="mini" :disabled="!!topo.ocupado" title="aplica e tira da lista (git stash pop)" @click="aplicarStash(topo, s, true)">aplicar e remover</button>
+                  <button type="button" class="mini perigo" :disabled="!!topo.ocupado" title="apagar (pede confirmacao)" @click="apagarStash(topo, s)">apagar</button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- pull requests (GitHub CLI) -->
+          <div v-else-if="topo.aba === 'prs'" class="git-unica">
+            <span v-if="topo.carregandoPrs" class="nota-lista">consultando o GitHub...</span>
+            <div v-else-if="topo.erroPrs" class="git-alerta ruim">
+              <span>{{ topo.erroPrs }}</span>
+              <button type="button" class="mini" @click="carregarPrs(topo)">tentar de novo</button>
+            </div>
+            <template v-else-if="topo.prs">
+              <div class="git-linha-form">
+                <a class="repo-link mono" :href="topo.prs.url" target="_blank" rel="noopener">{{ topo.prs.repo }}</a>
+                <span class="fraco">{{ topo.prs.prs.length }} PR(s) aberto(s)</span>
+                <span class="espaco"></span>
+                <a v-if="!prDoBranch(topo) && linkNovoPR(topo)" class="botao" :href="linkNovoPR(topo)" target="_blank" rel="noopener"
+                   title="abre a pagina de criar PR no GitHub">abrir PR de {{ estadoPainel(topo).branch }}</a>
+                <button type="button" class="mini" title="consultar de novo" aria-label="consultar de novo" @click="carregarPrs(topo)">↻</button>
+              </div>
+              <div class="git-tabela">
+                <span v-if="!topo.prs.prs.length" class="nota-lista">nenhum PR aberto neste repositorio.</span>
+                <a v-for="pr in topo.prs.prs" :key="pr.numero" class="git-linha git-pr" :class="{ atual: pr.branch === estadoPainel(topo).branch }"
+                   :href="pr.url" target="_blank" rel="noopener" title="abrir no GitHub">
+                  <span class="pr-num mono">#{{ pr.numero }}</span>
+                  <div class="l-corpo">
+                    <div class="l-titulo">
+                      <span class="pr-titulo">{{ pr.titulo }}</span>
+                      <span v-if="pr.branch === estadoPainel(topo).branch" class="chip-git ref">este branch</span>
+                      <span v-if="pr.rascunho" class="chip-git">rascunho</span>
+                    </div>
+                    <div class="l-sub"><span class="mono">{{ pr.branch }} → {{ pr.base }}</span> <span class="fraco">· {{ pr.autor }} · {{ tempoRelativo(pr.criado) }}</span></div>
+                  </div>
+                  <div class="pr-chips">
+                    <span v-if="pr.checks" class="chip-git" :class="{ ok: pr.checks === 'ok', ruim: pr.checks === 'falhou', aviso: pr.checks === 'pendente' }">{{ rotuloChecks(pr.checks) }}</span>
+                    <span v-if="pr.revisao === 'APPROVED'" class="chip-git ok">aprovado</span>
+                    <span v-else-if="pr.revisao === 'CHANGES_REQUESTED'" class="chip-git ruim">mudancas pedidas</span>
+                    <span v-else-if="pr.revisao === 'REVIEW_REQUIRED'" class="chip-git">aguardando revisao</span>
+                    <span v-if="pr.conflitos" class="chip-git ruim">conflito</span>
+                    <span class="mono mais">+{{ pr.adicoes }}</span><span class="mono menos">−{{ pr.remocoes }}</span>
+                  </div>
+                </a>
+              </div>
+            </template>
+          </div>
+
+          <div v-if="topo.saida" class="git-saida">
+            <pre>{{ topo.saida }}</pre>
+            <button type="button" class="mini" aria-label="fechar saida" @click="topo.saida = ''">×</button>
+          </div>
         </template>
 
         <!-- seletor de pastas -->
@@ -550,10 +822,10 @@
         <button v-if="topo.tipo === 'perfil'" type="button" class="botao perigo esquerda" @click="apagarPerfil(topo.perfil)">apagar</button>
         <button v-if="topo.tipo === 'perfil'" type="button" class="botao" @click="renomearPerfil(topo.perfil)">renomear</button>
 
-        <button type="button" class="botao" @click="fecharTopo()">{{ topo.tipo === 'branch' ? 'fechar' : 'cancelar' }}</button>
+        <button type="button" class="botao" @click="fecharTopo()">{{ topo.tipo === 'branch' || topo.tipo === 'git' ? 'fechar' : 'cancelar' }}</button>
 
         <button v-if="topo.tipo === 'texto'" type="button" class="botao primario" @click="confirmarTexto">confirmar</button>
-        <button v-else-if="topo.tipo === 'confirmar'" type="button" class="botao primario perigo" @click="topo.resolver(true); fecharTopo(true)">confirmar</button>
+        <button v-else-if="topo.tipo === 'confirmar'" type="button" class="botao primario perigo" @click="topo.resolver(true); fecharTopo(true)">{{ topo.botao || 'confirmar' }}</button>
         <button v-else-if="topo.tipo === 'pasta'" type="button" class="botao primario" @click="usarPasta">usar esta pasta</button>
         <button v-else-if="topo.tipo === 'servico'" type="button" class="botao primario" @click="salvarServico">salvar</button>
         <button v-else-if="topo.tipo === 'perfil'" type="button" class="botao primario" @click="gravarPerfilAtual(topo.perfil)">gravar selecao atual</button>

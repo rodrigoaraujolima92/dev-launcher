@@ -348,6 +348,8 @@ func rotas(g *Gerente, raiz string, encerrar func()) http.Handler {
 		responderJSON(w, http.StatusOK, map[string]any{"git": g.EstadosGit(r.Context(), false)})
 	})
 
+	rotasPainelGit(mux, g)
+
 	mux.HandleFunc("GET /api/docker", func(w http.ResponseWriter, r *http.Request) {
 		responderJSON(w, http.StatusOK, g.EstadoDocker(r.Context()))
 	})

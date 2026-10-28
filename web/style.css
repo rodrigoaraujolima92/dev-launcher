@@ -534,6 +534,8 @@ main {
 /* Etiqueta de caminho quebrado: config que veio de outra maquina, ou raiz apontando para o
    lugar errado. Aparece antes de tentar subir, nao depois de falhar. */
 .etiqueta.sem-pasta { font-family: var(--sans); color: var(--vermelho); background: rgba(255, 123, 114, 0.12); }
+/* Porta que este projeto divide com outro e que esta ocupada: aviso, nao erro. */
+.etiqueta.disputa { font-family: var(--sans); font-size: 11.5px; color: var(--ambar-vivo); background: var(--ambar-fraco); }
 
 /* Selo de estado: e o que se le de relance. Parado e so texto apagado; os outros ganham cor. */
 .selo {
@@ -827,16 +829,29 @@ main {
   border: 1px solid transparent;
   border-radius: 8px;
 }
-.containers b { font-weight: 500; color: var(--texto); }
-.containers .dica {
-  margin-left: auto;
-  font-size: 11.5px;
+/* Linha de container numa coluna estreita: o nome encolhe com reticencias e o status cede
+   espaco antes dele; porta e politica nunca quebram linha. */
+.containers b {
+  flex: 0 1 auto;
+  min-width: 48px;
+  font-weight: 500;
+  color: var(--texto);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  max-width: 45%;
 }
-.containers .portas { font-family: var(--mono); font-size: 11px; color: var(--azul); }
+.containers .dica {
+  flex: 1 100 0;
+  min-width: 0;
+  margin-left: auto;
+  font-size: 11.5px;
+  text-align: right;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.containers .portas { flex: none; font-family: var(--mono); font-size: 11px; color: var(--azul); white-space: nowrap; }
+.containers .led, .containers .politica, .containers .acoes-container { flex: none; }
 
 .containers li.de-fora { background: none; border: 1px dashed var(--linha); }
 .containers li.ativo { border-color: rgba(242, 166, 90, 0.55); }
@@ -1169,12 +1184,379 @@ main {
 .item-pasta.atual { opacity: 1; color: var(--ambar-vivo); }
 .item-pasta.atual .marca { color: var(--ambar-vivo); background: var(--ambar-fraco); }
 
+/* ---------------- resumo do git no cartao ---------------- */
+
+.git .resumo-git {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 2px 8px;
+  font-size: 12px;
+  color: var(--suave);
+  background: none;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  cursor: pointer;
+}
+.git .resumo-git:hover { border-color: var(--linha-forte); background: var(--painel-alto); }
+.git .resumo-git .abrir-painel { color: var(--fraco); font-size: 11.5px; }
+.git .resumo-git:hover .abrir-painel { color: var(--ambar-vivo); }
+
+/* ---------------- painel git ---------------- */
+
+/* O painel e uma ferramenta de trabalho: ocupa quase a tela e tem altura fixa, para a lista e
+   o diff rolarem cada um no seu canto sem o modal mudar de tamanho a cada clique. */
+.modal-caixa.larga { width: min(1240px, calc(100vw - 40px)); height: calc(100vh - 60px); }
+.modal-caixa.larga .modal-corpo { display: flex; flex-direction: column; flex: 1; min-height: 0; overflow: hidden; }
+
+.mono { font-family: var(--mono); }
+.fraco { color: var(--fraco); }
+.espaco { flex: 1; }
+
+.git-barra {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding-bottom: 10px;
+  font-size: 12.5px;
+}
+.ramo-painel {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 4px 11px;
+  font-family: var(--mono);
+  font-size: 12.5px;
+  color: var(--texto);
+  background: var(--poco);
+  border: 1px solid var(--linha-forte);
+  border-radius: 999px;
+  cursor: pointer;
+}
+.ramo-painel:hover { color: var(--ambar-vivo); border-color: rgba(242, 166, 90, 0.5); }
+.ramo-painel .ico-ramo { width: 13px; height: 13px; color: var(--fraco); }
+.git-barra .upstream { font-family: var(--mono); font-size: 12px; color: var(--fraco); }
+.git-barra .upstream.sem { font-family: var(--sans); font-style: italic; }
+.git-barra .atras, .git-linha .atras, .mini .atras { color: var(--vermelho); font-family: var(--mono); }
+.git-barra .frente, .git-linha .frente { color: var(--azul); font-family: var(--mono); }
+.mini.acao-push { color: var(--ambar-vivo); }
+.mini.acao-push:hover { color: #201305; background: var(--ambar); border-color: var(--ambar); }
+
+.git-alerta {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 10px;
+  padding: 9px 12px;
+  font-size: 12.5px;
+  color: var(--ambar-vivo);
+  background: var(--ambar-fraco);
+  border: 1px solid rgba(242, 166, 90, 0.35);
+  border-radius: var(--raio-p);
+}
+.git-alerta > span { flex: 1; }
+.git-alerta.ruim { color: var(--vermelho); background: rgba(255, 123, 114, 0.09); border-color: rgba(255, 123, 114, 0.3); white-space: pre-wrap; }
+
+.git-abas { display: flex; flex: none; gap: 2px; border-bottom: 1px solid var(--linha); margin-bottom: 12px; overflow-x: auto; overflow-y: hidden; }
+.git-aba {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 12px;
+  font-size: 13px;
+  color: var(--suave);
+  background: none;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.git-aba:hover { color: var(--texto); }
+.git-aba[aria-selected="true"] { color: var(--texto); border-bottom-color: var(--ambar); }
+.git-aba .conta {
+  min-width: 18px;
+  padding: 0 6px;
+  font-size: 11px;
+  line-height: 17px;
+  text-align: center;
+  color: var(--suave);
+  background: var(--painel-alto);
+  border-radius: 999px;
+}
+
+/* Duas colunas: lista a esquerda, diff a direita. Cada uma rola sozinha. */
+.git-dupla { display: grid; grid-template-columns: minmax(280px, 380px) minmax(0, 1fr); gap: 12px; flex: 1; min-height: 0; }
+.git-esq { display: flex; flex-direction: column; gap: 10px; min-height: 0; }
+.git-dir { display: flex; flex-direction: column; min-height: 0; min-width: 0; }
+.git-unica { display: flex; flex-direction: column; gap: 8px; flex: 1; min-height: 0; }
+
+.git-arquivos, .git-commits, .git-tabela {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 4px;
+  background: var(--poco);
+  border: 1px solid var(--linha-forte);
+  border-radius: 10px;
+}
+
+.git-secao {
+  position: sticky;
+  top: -4px;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 8px 5px;
+  font-size: 11.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--fraco);
+  background: var(--poco);
+}
+.git-secao > span { flex: 1; }
+.git-secao b { color: var(--suave); font-weight: 600; }
+.link {
+  padding: 0;
+  font-size: 11.5px;
+  text-transform: none;
+  letter-spacing: 0;
+  color: var(--suave);
+  background: none;
+  border: 0;
+  cursor: pointer;
+}
+.link:hover { color: var(--ambar-vivo); text-decoration: underline; text-underline-offset: 3px; }
+.link.perigo:hover { color: var(--vermelho); }
+.link[disabled] { opacity: 0.45; cursor: not-allowed; }
+
+.git-arq {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 6px 4px 8px;
+  font-size: 12.5px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+.git-arq:hover { background: rgba(255, 255, 255, 0.05); }
+.git-arq.sel { background: var(--ambar-fraco); }
+.git-arq .letra { flex: none; width: 14px; font-family: var(--mono); font-size: 11.5px; font-weight: 600; text-align: center; }
+.l-novo { color: var(--verde); }
+.l-mod { color: var(--ambar); }
+.l-del { color: var(--vermelho); }
+.l-ren { color: var(--azul); }
+.l-conf { color: var(--vermelho); }
+.git-arq .arq-nome { flex: none; max-width: 60%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--texto); }
+.git-arq .arq-pasta { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; direction: rtl; text-align: left; font-size: 11.5px; color: var(--fraco); }
+.git-arq .arq-acoes { display: flex; gap: 2px; visibility: hidden; }
+.git-arq:hover .arq-acoes, .git-arq.sel .arq-acoes, .git-arq:focus-within .arq-acoes { visibility: visible; }
+.git-arq .arq-acoes button {
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  font-size: 14px;
+  line-height: 1;
+  color: var(--suave);
+  background: var(--painel-alto);
+  border: 1px solid var(--linha);
+  border-radius: 5px;
+  cursor: pointer;
+}
+.git-arq .arq-acoes button:hover { color: var(--ambar-vivo); border-color: rgba(242, 166, 90, 0.5); }
+.git-arq .arq-acoes button.perigo:hover { color: var(--vermelho); border-color: rgba(255, 123, 114, 0.5); }
+.git-arq .arq-acoes button[disabled] { opacity: 0.4; cursor: not-allowed; }
+
+.git-commit { display: flex; flex-direction: column; gap: 8px; }
+.git-commit textarea, .git-linha-form input, .git-select {
+  width: 100%;
+  padding: 8px 11px;
+  font-family: var(--sans);
+  font-size: 13px;
+  color: var(--texto);
+  background: var(--poco);
+  border: 1px solid var(--linha-forte);
+  border-radius: var(--raio-p);
+}
+.git-commit textarea { resize: vertical; min-height: 64px; }
+.git-commit textarea:focus, .git-linha-form input:focus, .git-select:focus {
+  outline: none;
+  border-color: var(--ambar);
+  box-shadow: 0 0 0 3px var(--ambar-fraco);
+}
+.git-commit textarea::placeholder, .git-linha-form input::placeholder { color: #4d5462; }
+.git-select option { background: #1f2430; }
+.git-commit-acoes { display: flex; align-items: center; justify-content: flex-end; gap: 8px; }
+.git-commit-acoes .ajuda { margin-right: auto; font-size: 12px; color: var(--fraco); }
+.botao .contador { margin-left: 7px; }
+
+.git-dir-topo { display: flex; align-items: center; gap: 8px; padding: 0 2px 8px; font-size: 12.5px; min-width: 0; }
+.git-dir-topo .mono { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* ---------------- visor de diff ---------------- */
+
+.visor-diff {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 6px 0;
+  font-family: var(--mono);
+  font-size: 12px;
+  line-height: 1.55;
+  background: var(--poco);
+  border: 1px solid var(--linha-forte);
+  border-radius: 10px;
+}
+.diff-vazio { padding: 16px; font-family: var(--sans); font-size: 12.5px; color: var(--fraco); }
+.dl { display: flex; min-width: max-content; }
+.dl .nv, .dl .nn {
+  flex: none;
+  width: 44px;
+  padding-right: 8px;
+  text-align: right;
+  color: #4a5160;
+  user-select: none;
+}
+.dl .tx { flex: 1; padding: 0 12px 0 6px; white-space: pre; }
+.dl.add { background: rgba(90, 209, 154, 0.1); }
+.dl.add .tx { color: #b4f0d2; }
+.dl.del { background: rgba(255, 123, 114, 0.1); }
+.dl.del .tx { color: #ffc2bd; }
+.dl.hunk { color: var(--azul); background: rgba(108, 180, 255, 0.06); }
+.dl.hunk .tx { color: var(--azul); }
+.dl.meta .tx { color: var(--fraco); }
+.dl.arquivo { margin-top: 6px; background: var(--painel-alto); border-block: 1px solid var(--linha); }
+.dl.arquivo:first-child { margin-top: 0; }
+.dl.arquivo .tx { color: var(--texto); font-weight: 600; }
+.diff-corte { padding: 10px 16px; font-family: var(--sans); font-size: 12px; color: var(--ambar); }
+
+/* ---------------- historico, branches, stash, PRs ---------------- */
+
+.git-commit-item {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  width: 100%;
+  padding: 7px 9px;
+  text-align: left;
+  color: var(--texto);
+  background: none;
+  border: 0;
+  border-radius: 7px;
+  cursor: pointer;
+}
+.git-commit-item:hover { background: rgba(255, 255, 255, 0.05); }
+.git-commit-item.sel { background: var(--ambar-fraco); }
+.c-resumo { font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.c-meta { font-size: 11.5px; color: var(--fraco); }
+.c-meta .hash { margin-right: 7px; color: var(--suave); }
+.c-chips { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 2px; }
+
+.chip-git {
+  display: inline-block;
+  padding: 0 7px;
+  font-family: var(--sans);
+  font-size: 11px;
+  line-height: 18px;
+  color: var(--suave);
+  background: var(--painel-alto);
+  border-radius: 5px;
+  white-space: nowrap;
+}
+.chip-git.ref { color: var(--azul); background: rgba(108, 180, 255, 0.12); font-family: var(--mono); }
+.chip-git.aviso { color: var(--ambar-vivo); background: var(--ambar-fraco); }
+.chip-git.ok { color: var(--verde); background: rgba(90, 209, 154, 0.12); }
+.chip-git.ruim { color: var(--vermelho); background: rgba(255, 123, 114, 0.12); }
+
+.git-linha-form { display: flex; align-items: center; gap: 8px; }
+.git-linha-form input { flex: 1; min-width: 0; }
+.git-linha-form input.filtro { flex: 0 1 180px; }
+.git-linha-form .botao { white-space: nowrap; text-decoration: none; }
+.git-unica .nota-modal { margin: 0; }
+.repo-link { color: var(--texto); text-decoration: none; }
+.repo-link:hover { color: var(--ambar-vivo); text-decoration: underline; text-underline-offset: 3px; }
+
+.git-linha {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 10px;
+  color: var(--texto);
+  text-decoration: none;
+  border-radius: 7px;
+}
+.git-linha + .git-linha { border-top: 1px solid var(--linha); }
+.git-linha:hover { background: rgba(255, 255, 255, 0.035); }
+.git-linha.atual { background: rgba(242, 166, 90, 0.06); }
+.l-corpo { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.l-titulo { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; font-size: 13px; }
+.l-sub { font-size: 12px; color: var(--suave); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.l-acoes { display: flex; gap: 5px; flex: none; }
+.l-acoes .mini { padding: 3px 9px; font-size: 12px; }
+.git-pr .pr-num { flex: none; width: 46px; font-size: 12.5px; color: var(--fraco); }
+.git-pr .pr-titulo { font-weight: 500; }
+.git-pr:hover .pr-titulo { color: var(--ambar-vivo); }
+.pr-chips { display: flex; align-items: center; flex-wrap: wrap; justify-content: flex-end; gap: 5px; max-width: 45%; font-size: 12px; }
+.pr-chips .mais { color: var(--verde); }
+.pr-chips .menos { color: var(--vermelho); }
+
+.git-saida {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin-top: 10px;
+  padding: 8px 10px;
+  background: var(--poco);
+  border: 1px solid var(--linha);
+  border-radius: var(--raio-p);
+}
+.git-saida pre {
+  flex: 1;
+  margin: 0;
+  max-height: 90px;
+  overflow: auto;
+  font-family: var(--mono);
+  font-size: 11.5px;
+  color: var(--suave);
+  white-space: pre-wrap;
+}
+
+@media (max-width: 860px) {
+  /* Meia tela: lista em cima, diff embaixo. */
+  .modal-caixa.larga { height: calc(100vh - 24px); width: calc(100vw - 16px); }
+  .git-dupla { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr) minmax(0, 1.2fr); }
+  .git-linha { flex-wrap: wrap; }
+  .pr-chips { max-width: none; justify-content: flex-start; }
+}
+
 /* ---------------- telas estreitas ---------------- */
+
+.titulo h1 { white-space: nowrap; }
 
 @media (max-width: 1280px) {
   /* Antes de o topo estourar, somem os rotulos que os numeros ja explicam. */
   .medidor span { display: none; }
   .titulo p { display: none; }
+}
+
+@media (max-width: 980px) {
+  /* Janela em meia tela: as duas faixas do topo deixam de ser fixas e quebram linha, em vez
+     de empilhar um controle em cima do outro. */
+  .topo, .barra-perfis {
+    position: static;
+    height: auto;
+    flex-wrap: wrap;
+    gap: 10px;
+    padding: 10px 16px;
+  }
+  .medidores { margin-left: 0; }
+  .acoes-topo, .acoes-barra { flex-wrap: wrap; }
+  .perfis { flex: 1 1 100%; order: 5; }
+  main { padding: 14px 16px 40px; }
+  .cartao { grid-template-columns: auto minmax(0, 1fr); }
+  .controles { grid-column: 2; flex-direction: row; align-items: center; justify-content: space-between; flex-wrap: wrap; }
 }
 
 /* Quem pediu menos movimento no sistema nao ganha pulso, pisca-pisca nem entrada animada. */

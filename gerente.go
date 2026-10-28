@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 )
@@ -35,6 +36,9 @@ type Estado struct {
 	Mensagem string    `json:"mensagem"`
 	PID      int       `json:"pid"`
 	Desde    time.Time `json:"desde"`
+	// Disputa explica a situacao de uma porta que este projeto divide com outro: "porta 8080
+	// em uso por X", ou que nao deu para saber qual dos dois esta no ar. Vazio = sem disputa.
+	Disputa string `json:"disputa,omitempty"`
 }
 
 type anel struct {
@@ -168,6 +172,68 @@ func (g *Gerente) marcar(id, status, mensagem string) {
 	if mudou {
 		g.emitirEstados()
 	}
+}
+
+func (g *Gerente) definirDisputa(id, disputa string) {
+	g.mu.Lock()
+	e, ok := g.estados[id]
+	mudou := ok && e.Disputa != disputa
+	if mudou {
+		e.Disputa = disputa
+	}
+	g.mu.Unlock()
+	if mudou {
+		g.emitirEstados()
+	}
+}
+
+// rivaisDePorta lista os outros projetos cuja checagem de "pronto" olha a mesma porta.
+func (g *Gerente) rivaisDePorta(s *Servico) []*Servico {
+	if s.Pronto.Tipo != "porta" {
+		return nil
+	}
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	rivais := []*Servico{}
+	for _, outro := range g.cfg.Servicos {
+		if outro.ID != s.ID && outro.Pronto.Tipo == "porta" && outro.Pronto.Porta == s.Pronto.Porta {
+			rivais = append(rivais, outro)
+		}
+	}
+	return rivais
+}
+
+// avaliar diz se o servico esta no ar DE VERDADE. Porta atendendo nao basta quando outro
+// projeto do config usa a mesma porta: ai e preciso saber de quem e o processo que escuta.
+// disputa vem preenchida quando a porta esta com outro projeto (pronto = false) ou quando
+// nao deu para saber de qual dos dois e (pronto = true, na duvida vale a porta).
+func (g *Gerente) avaliar(ctx context.Context, s *Servico) (pronto bool, disputa string) {
+	if !g.exec.Pronto(ctx, s) {
+		return false, ""
+	}
+	rivais := g.rivaisDePorta(s)
+	arbitro, ok := g.exec.(ArbitroDePorta)
+	if len(rivais) == 0 || !ok {
+		return true, ""
+	}
+	nomes := make([]string, 0, len(rivais))
+	for _, r := range rivais {
+		nomes = append(nomes, r.Nome)
+	}
+	dono := arbitro.DonoDaPorta(ctx, s.Pronto.Porta, append([]*Servico{s}, rivais...))
+	switch {
+	case dono == s.ID:
+		return true, ""
+	case dono == "":
+		return true, fmt.Sprintf("porta %d dividida com %s - nao deu para saber qual esta no ar",
+			s.Pronto.Porta, strings.Join(nomes, ", "))
+	}
+	for _, r := range rivais {
+		if r.ID == dono {
+			return false, fmt.Sprintf("porta %d em uso por %s", s.Pronto.Porta, r.Nome)
+		}
+	}
+	return true, ""
 }
 
 func (g *Gerente) definirPID(id string, pid int) {
@@ -486,8 +552,16 @@ func (g *Gerente) executar(id string, conjunto map[string]bool, tarefas map[stri
 			}
 		}
 
-		if g.exec.Pronto(ctx, s) {
+		pronto, disputa := g.avaliar(ctx, s)
+		g.definirDisputa(id, disputa)
+		if pronto {
 			g.marcar(id, StatusPronto, "ja estava no ar")
+			return
+		}
+		if disputa != "" {
+			// A porta esta com outro projeto: iniciar este so faria ele morrer no bind, e
+			// a tela ainda diria "ja estava no ar" por causa do vizinho.
+			falhar(errors.New(disputa + " - pare ele antes de subir este"))
 			return
 		}
 
@@ -511,8 +585,15 @@ func (g *Gerente) esperarPronto(ctx context.Context, s *Servico) error {
 	}
 	prazo := time.Now().Add(limite)
 	for {
-		if g.exec.Pronto(ctx, s) {
+		pronto, disputa := g.avaliar(ctx, s)
+		if pronto {
+			g.definirDisputa(s.ID, disputa)
 			return nil
+		}
+		if disputa != "" {
+			// Outro projeto pegou a porta enquanto este subia: nao adianta esperar o timeout.
+			g.definirDisputa(s.ID, disputa)
+			return errors.New(disputa)
 		}
 		if time.Now().After(prazo) {
 			return fmt.Errorf("nao ficou pronto em %s", limite)
@@ -927,14 +1008,21 @@ func (g *Gerente) varrer(ctx context.Context) {
 		if subindo {
 			continue
 		}
-		if g.exec.Pronto(ctx, s) {
+		pronto, disputa := g.avaliar(ctx, s)
+		g.definirDisputa(s.ID, disputa)
+		if pronto {
 			if status != StatusPronto {
 				g.marcar(s.ID, StatusPronto, "")
 			}
 			continue
 		}
 		if status == StatusPronto {
-			g.marcar(s.ID, StatusParado, "caiu")
+			// Com a porta nas maos de outro projeto este nao "caiu": so nunca foi ele.
+			mensagem := "caiu"
+			if disputa != "" {
+				mensagem = ""
+			}
+			g.marcar(s.ID, StatusParado, mensagem)
 		}
 	}
 }

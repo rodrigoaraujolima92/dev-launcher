@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -32,6 +33,14 @@ type execFake struct {
 	ordem     []string
 	prontosAo map[string][]string // quem ja estava pronto quando cada um foi iniciado
 	parados   []string
+	donos     map[int]string // porta -> id de quem esta nela ("" = nao da para saber)
+}
+
+// DonoDaPorta faz do execFake um ArbitroDePorta: os testes dizem de quem e a porta.
+func (e *execFake) DonoDaPorta(_ context.Context, porta int, _ []*Servico) string {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	return e.donos[porta]
 }
 
 func novoExecFake(ids []string, comp map[string]comportamento) *execFake {
@@ -502,6 +511,109 @@ func TestPararNoMeioDaSubidaCancelaELiberaOServico(t *testing.T) {
 		t.Fatal(err)
 	}
 	esperarStatus(t, g, "db", StatusPronto, 2*time.Second)
+}
+
+// gerenteComPortaDividida deixa "web" e "outro" na mesma porta - o front de duas empresas,
+// os dois na 8080.
+func gerenteComPortaDividida(t *testing.T, comp map[string]comportamento) (*Gerente, *execFake) {
+	t.Helper()
+	cfg := configTeste()
+	cfg.Servicos = append(cfg.Servicos, &Servico{
+		ID: "outro", Nome: "outro-front", Grupo: "web", Tipo: TipoApp,
+		Dir: "outro", Cmd: "npm run serve",
+		Pronto:  Checagem{Tipo: "porta", Porta: 8080},
+		Timeout: 10, Modo: ModoGerenciado, Depende: []string{},
+	})
+	fake := novoExecFake(cfg.ids(), comp)
+	fake.donos = map[int]string{}
+	g := NovoGerente(t.TempDir(), "", "", cfg, fake, &dockerFake{}, NovoCacheGit(novoGitFake()))
+	g.intervalo = 5 * time.Millisecond
+	return g, fake
+}
+
+func TestPortaDivididaSoODonoFicaNoAr(t *testing.T) {
+	// A porta 8080 responde para os dois; quem esta nela e o "outro".
+	g, fake := gerenteComPortaDividida(t, map[string]comportamento{
+		"web": {jaPronto: true}, "outro": {jaPronto: true},
+	})
+	fake.donos[8080] = "outro"
+
+	g.varrer(context.Background())
+
+	if e := statusDe(g, "outro"); e.Status != StatusPronto || e.Disputa != "" {
+		t.Fatalf("o dono da porta deveria estar no ar e sem disputa: %+v", e)
+	}
+	e := statusDe(g, "web")
+	if e.Status != StatusParado {
+		t.Fatalf("quem nao e dono da porta nao pode aparecer no ar, veio %s", e.Status)
+	}
+	if !strings.Contains(e.Disputa, "8080") || !strings.Contains(e.Disputa, "outro-front") {
+		t.Fatalf("o cartao deveria dizer com quem esta a porta: %q", e.Disputa)
+	}
+
+	// Trocou quem esta na porta: a tela acompanha, e nao acusa "caiu" em quem so nao era.
+	fake.mu.Lock()
+	fake.donos[8080] = "web"
+	fake.mu.Unlock()
+	g.varrer(context.Background())
+
+	if e := statusDe(g, "web"); e.Status != StatusPronto || e.Disputa != "" {
+		t.Fatalf("web virou o dono: %+v", e)
+	}
+	if e := statusDe(g, "outro"); e.Status != StatusParado || e.Mensagem != "" {
+		t.Fatalf("outro deveria ficar parado, sem \"caiu\": %+v", e)
+	}
+
+	// Porta livre: a disputa some dos dois.
+	fake.mu.Lock()
+	fake.comp["web"], fake.comp["outro"] = comportamento{}, comportamento{}
+	fake.mu.Unlock()
+	g.varrer(context.Background())
+	for _, id := range []string{"web", "outro"} {
+		if e := statusDe(g, id); e.Disputa != "" {
+			t.Fatalf("%s: com a porta livre nao ha disputa: %q", id, e.Disputa)
+		}
+	}
+}
+
+func TestPortaDivididaSemSaberODonoAvisaOsDois(t *testing.T) {
+	g, _ := gerenteComPortaDividida(t, map[string]comportamento{
+		"web": {jaPronto: true}, "outro": {jaPronto: true},
+	})
+	// donos[8080] vazio: o arbitro nao conseguiu ligar o processo a nenhum dos dois.
+
+	g.varrer(context.Background())
+
+	for _, id := range []string{"web", "outro"} {
+		e := statusDe(g, id)
+		// Na duvida vale a porta - mas o cartao tem que dizer que e duvida.
+		if e.Status != StatusPronto || !strings.Contains(e.Disputa, "dividida") {
+			t.Fatalf("%s deveria aparecer no ar com o aviso de porta dividida: %+v", id, e)
+		}
+	}
+	// Quem nao divide porta com ninguem nao ganha aviso nenhum.
+	if e := statusDe(g, "api"); e.Disputa != "" {
+		t.Fatalf("api nao divide porta: %q", e.Disputa)
+	}
+}
+
+func TestSubirComAPortaOcupadaPorOutroProjetoFalhaNaHora(t *testing.T) {
+	g, fake := gerenteComPortaDividida(t, map[string]comportamento{
+		"outro": {jaPronto: true}, "web": {jaPronto: true},
+		"db": {jaPronto: true}, "rabbit": {jaPronto: true}, "api": {jaPronto: true},
+	})
+	fake.donos[8080] = "outro"
+
+	subirEEsperar(t, g, []string{"web"}, 3*time.Second)
+
+	e := statusDe(g, "web")
+	// Antes isso virava "ja estava no ar": a porta respondia, so que pelo vizinho.
+	if e.Status != StatusErro || !strings.Contains(e.Mensagem, "outro-front") {
+		t.Fatalf("subir com a porta ocupada deveria falhar citando quem esta nela: %+v", e)
+	}
+	if ordem, _, _ := fake.instantaneo(); contem(ordem, "web") {
+		t.Fatalf("nao deveria nem tentar iniciar: %v", ordem)
+	}
 }
 
 func TestSubirSemNadaSelecionadoDaErro(t *testing.T) {

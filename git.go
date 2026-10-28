@@ -349,6 +349,14 @@ func (c *CacheGit) Buscar(ctx context.Context, dir string) error {
 	return err
 }
 
+// Esquecer joga fora o cache inteiro: depois de um commit ou pull pelo painel, todo projeto
+// que mora no mesmo repositorio precisa ser relido.
+func (c *CacheGit) Esquecer() {
+	c.mu.Lock()
+	c.itens = map[string]itemGit{}
+	c.mu.Unlock()
+}
+
 func (c *CacheGit) Branches(ctx context.Context, dir string) ([]Branch, error) {
 	return c.sonda.Branches(ctx, dir)
 }
