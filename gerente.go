@@ -99,6 +99,7 @@ type Gerente struct {
 	intervalo    time.Duration      // de quanto em quanto tempo repete a checagem de "pronto"
 	emCurso      map[string]*tarefa // servicos no meio de uma subida
 	ultimoDocker string             // ultimo estado do docker publicado, para nao repetir evento igual
+	foco         *Foco              // aba foco (tarefas e lofi); nil nos testes que nao usam
 }
 
 func NovoGerente(raiz, raizNavegacao, caminhoCfg string, cfg *Config, exe Executor, docker SondaDocker, git *CacheGit) *Gerente {

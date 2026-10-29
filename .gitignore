@@ -11,8 +11,12 @@ tmp/
 config.json
 start-dev.ps1
 
-# Sobra de escrita atomica do config (salvarConfig grava .tmp e renomeia)
+# Tarefas e estacoes de lofi da aba foco: tambem sao de cada um
+foco.json
+
+# Sobra de escrita atomica (salvarConfig/salvarFoco gravam .tmp e renomeiam)
 config.json.tmp
+foco.json.tmp
 
 # Atalho do Windows: guarda caminho absoluto da maquina de quem criou
 *.lnk

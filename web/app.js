@@ -198,6 +198,258 @@ function quandoPt(texto) {
   return t === texto ? texto : "ha " + t;
 }
 
+// ------------------------------------------------------------------
+// foco (lofi, pomodoro, tarefas e agenda)
+// ------------------------------------------------------------------
+
+// Preferencias de quem olha a tela (volume, estacao, tempos do pomodoro): ficam no
+// navegador. Tarefas e estacoes vao para o launcher, que e quem dispara os lembretes.
+const CHAVE_FOCO = "dev-launcher.foco";
+function lerPrefsFoco() {
+  try {
+    return JSON.parse(localStorage.getItem(CHAVE_FOCO)) || {};
+  } catch {
+    return {};
+  }
+}
+function gravarPrefsFoco(mudanca) {
+  try {
+    localStorage.setItem(CHAVE_FOCO, JSON.stringify({ ...lerPrefsFoco(), ...mudanca }));
+  } catch {
+    // navegador sem storage (janela anonima): a preferencia so nao sobrevive ao recarregar
+  }
+}
+
+// A aba aberta vem do endereco (#foco, que e o que a notificacao abre) e, sem ele, da
+// ultima escolha.
+function lerAba() {
+  if (location.hash === "#foco") return "foco";
+  if (location.hash === "#projetos") return "projetos";
+  return lerPrefsFoco().aba === "foco" ? "foco" : "projetos";
+}
+
+function isoDia(d) {
+  const p = (n) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+}
+function dataDoIso(iso) {
+  const [a, m, d] = iso.split("-").map(Number);
+  return new Date(a, m - 1, d);
+}
+function diasEntre(deIso, ateIso) {
+  return Math.round((dataDoIso(ateIso) - dataDoIso(deIso)) / 86400000);
+}
+function chavePrazo(t) {
+  return (t.data || "9999-99-99") + " " + (t.hora || "99:99");
+}
+const PESO_PRIORIDADE = { alta: 0, "": 1, baixa: 2 };
+function porPrazo(a, b) {
+  const ka = chavePrazo(a), kb = chavePrazo(b);
+  if (ka !== kb) return ka < kb ? -1 : 1;
+  return (PESO_PRIORIDADE[a.prioridade || ""] ?? 1) - (PESO_PRIORIDADE[b.prioridade || ""] ?? 1);
+}
+
+const SEMANA_CURTA = ["dom", "seg", "ter", "qua", "qui", "sex", "sab"];
+const MESES = ["janeiro", "fevereiro", "marco", "abril", "maio", "junho", "julho", "agosto",
+  "setembro", "outubro", "novembro", "dezembro"];
+
+const OPCOES_LEMBRETE = [
+  { valor: null, rotulo: "sem aviso" },
+  { valor: 0, rotulo: "avisar na hora" },
+  { valor: 5, rotulo: "5 min antes" },
+  { valor: 10, rotulo: "10 min antes" },
+  { valor: 15, rotulo: "15 min antes" },
+  { valor: 30, rotulo: "30 min antes" },
+  { valor: 60, rotulo: "1 h antes" },
+  { valor: 120, rotulo: "2 h antes" },
+  { valor: 1440, rotulo: "1 dia antes" },
+];
+
+const FILTROS_TAREFA = [
+  { id: "hoje", rotulo: "hoje" },
+  { id: "proximas", rotulo: "proximas" },
+  { id: "todas", rotulo: "abertas" },
+  { id: "feitas", rotulo: "feitas" },
+];
+
+const MODOS_POMODORO = [
+  { id: "foco", rotulo: "foco" },
+  { id: "pausa", rotulo: "pausa" },
+  { id: "longa", rotulo: "pausa longa" },
+];
+
+const LISTA_SONS = [
+  { id: "chuva", nome: "chuva" },
+  { id: "ruido", nome: "ruido marrom" },
+  { id: "vinil", nome: "chiado de vinil" },
+];
+
+const NOVA_TAREFA = () => ({ titulo: "", data: "", hora: "", lembrete: 0 });
+
+// O que e de audio/video fica fora do Vue: player do YouTube e nos do WebAudio nao sao
+// estado de tela, e deixar o Vue envolver esses objetos em proxy quebra os dois.
+const midia = { yt: null, promessaYT: null, querTocar: false, audio: null, sons: {} };
+
+function carregarApiYouTube() {
+  if (window.YT && window.YT.Player) return Promise.resolve();
+  if (midia.promessaYT) return midia.promessaYT;
+  midia.promessaYT = new Promise((ok, falha) => {
+    const anterior = window.onYouTubeIframeAPIReady;
+    window.onYouTubeIframeAPIReady = () => {
+      if (typeof anterior === "function") anterior();
+      ok();
+    };
+    const s = document.createElement("script");
+    s.src = "https://www.youtube.com/iframe_api";
+    s.onerror = () => {
+      midia.promessaYT = null;
+      s.remove();
+      falha(new Error("nao consegui falar com o YouTube (sem internet?). os sons ambiente funcionam offline."));
+    };
+    document.head.appendChild(s);
+  });
+  return midia.promessaYT;
+}
+
+const ERROS_YT = {
+  2: "link invalido para o player.",
+  5: "o player do YouTube falhou neste video.",
+  100: "video removido ou privado.",
+  101: "esse video nao toca aqui: a live acabou ou o dono bloqueou o player embutido. troque o link.",
+  150: "esse video nao toca aqui: a live acabou ou o dono bloqueou o player embutido. troque o link.",
+  153: "o YouTube recusou o player embutido. tente recarregar a pagina.",
+};
+
+// ---- sons ambiente: gerados na hora pelo WebAudio, nada baixado ----
+
+function bufferRuido(ctx, segundos, gerar) {
+  const n = Math.floor(ctx.sampleRate * segundos);
+  const buf = ctx.createBuffer(2, n, ctx.sampleRate);
+  for (let c = 0; c < 2; c++) gerar(buf.getChannelData(c), ctx.sampleRate);
+  return buf;
+}
+// rosa (Paul Kellet): mais grave que o branco, base da chuva
+function gerarRosa(d) {
+  let b0 = 0, b1 = 0, b2 = 0, b3 = 0, b4 = 0, b5 = 0, b6 = 0;
+  for (let i = 0; i < d.length; i++) {
+    const w = Math.random() * 2 - 1;
+    b0 = 0.99886 * b0 + w * 0.0555179; b1 = 0.99332 * b1 + w * 0.0750759;
+    b2 = 0.969 * b2 + w * 0.153852; b3 = 0.8665 * b3 + w * 0.3104856;
+    b4 = 0.55 * b4 + w * 0.5329522; b5 = -0.7616 * b5 - w * 0.016898;
+    d[i] = (b0 + b1 + b2 + b3 + b4 + b5 + b6 + w * 0.5362) * 0.11;
+    b6 = w * 0.115926;
+  }
+}
+function gerarMarrom(d) {
+  let ultimo = 0;
+  for (let i = 0; i < d.length; i++) {
+    ultimo = (ultimo + 0.02 * (Math.random() * 2 - 1)) / 1.02;
+    d[i] = ultimo * 3.5;
+  }
+}
+// estalos esparsos com decaimento curto sobre um chiado bem baixo
+function gerarVinil(d, taxa) {
+  let estalo = 0;
+  for (let i = 0; i < d.length; i++) {
+    if (Math.random() < 9 / taxa) estalo = (Math.random() * 0.8 + 0.2) * (Math.random() < 0.5 ? -1 : 1);
+    d[i] = estalo + (Math.random() * 2 - 1) * 0.012;
+    estalo *= 0.82;
+  }
+}
+
+function garantirAudio() {
+  if (!midia.audio) {
+    const Ctx = window.AudioContext || window.webkitAudioContext;
+    if (!Ctx) return null;
+    midia.audio = new Ctx();
+  }
+  if (midia.audio.state === "suspended") midia.audio.resume();
+  return midia.audio;
+}
+
+function montarSom(id) {
+  const ctx = garantirAudio();
+  if (!ctx) return null;
+  const fonte = ctx.createBufferSource();
+  const ganho = ctx.createGain();
+  ganho.gain.value = 0;
+  let ultimo;
+  if (id === "chuva") {
+    fonte.buffer = bufferRuido(ctx, 6, gerarRosa);
+    const passaAlta = ctx.createBiquadFilter(); passaAlta.type = "highpass"; passaAlta.frequency.value = 280;
+    const passaBaixa = ctx.createBiquadFilter(); passaBaixa.type = "lowpass"; passaBaixa.frequency.value = 5200;
+    fonte.connect(passaAlta).connect(passaBaixa);
+    ultimo = passaBaixa;
+  } else if (id === "ruido") {
+    fonte.buffer = bufferRuido(ctx, 6, gerarMarrom);
+    const passaBaixa = ctx.createBiquadFilter(); passaBaixa.type = "lowpass"; passaBaixa.frequency.value = 900;
+    fonte.connect(passaBaixa);
+    ultimo = passaBaixa;
+  } else {
+    fonte.buffer = bufferRuido(ctx, 7, gerarVinil);
+    const banda = ctx.createBiquadFilter(); banda.type = "bandpass"; banda.frequency.value = 2400; banda.Q.value = 0.6;
+    fonte.connect(banda);
+    ultimo = banda;
+  }
+  ultimo.connect(ganho).connect(ctx.destination);
+  fonte.loop = true;
+  fonte.start();
+  return { fonte, ganho };
+}
+
+const FATOR_SOM = { chuva: 0.9, ruido: 0.9, vinil: 1.4 };
+
+// sininho de duas notas: lembrete e fim de fase do pomodoro
+function tocarSino() {
+  const ctx = garantirAudio();
+  if (!ctx) return;
+  const t0 = ctx.currentTime;
+  [[880, 0], [1318.5, 0.16]].forEach(([freq, atraso]) => {
+    const osc = ctx.createOscillator();
+    const g = ctx.createGain();
+    osc.type = "sine";
+    osc.frequency.value = freq;
+    g.gain.setValueAtTime(0.0001, t0 + atraso);
+    g.gain.exponentialRampToValueAtTime(0.22, t0 + atraso + 0.02);
+    g.gain.exponentialRampToValueAtTime(0.0001, t0 + atraso + 1.1);
+    osc.connect(g).connect(ctx.destination);
+    osc.start(t0 + atraso);
+    osc.stop(t0 + atraso + 1.2);
+  });
+}
+
+function prefsPomodoro() {
+  const p = lerPrefsFoco().pomodoro || {};
+  const num = (v, padrao, max) => (Number.isFinite(v) && v >= 1 && v <= max ? v : padrao);
+  return {
+    minFoco: num(p.minFoco, 25, 180),
+    minPausa: num(p.minPausa, 5, 60),
+    minLonga: num(p.minLonga, 15, 90),
+    emendar: !!p.emendar,
+  };
+}
+
+const TITULO_PAGINA = "dev launcher";
+
+function mmss(seg) {
+  return `${String(Math.floor(seg / 60)).padStart(2, "0")}:${String(seg % 60).padStart(2, "0")}`;
+}
+
+// O segundo a segundo do pomodoro fica num reativo proprio e num componente proprio: so o
+// relogio redesenha a cada tique, e nao a tela inteira.
+const pomoVivo = Vue.reactive({ restante: 25 * 60, total: 25 * 60 });
+const PomoTempo = {
+  props: { anel: Boolean },
+  data() { return { vivo: pomoVivo }; },
+  computed: {
+    texto() { return mmss(this.vivo.restante); },
+    feito() { return this.vivo.total ? 1 - this.vivo.restante / this.vivo.total : 0; },
+  },
+  template: `
+    <div v-if="anel" class="pomo-relogio" :style="{ '--feito': feito }"><span>{{ texto }}</span></div>
+    <span v-else>{{ texto }}</span>`,
+};
+
 const ABAS_GIT = [
   { id: "alteracoes", rotulo: "alteracoes" },
   { id: "historico", rotulo: "historico" },
@@ -236,10 +488,117 @@ createApp({
       filtroStatus: "", // "" | pronto | andando | falha
       recolhidos: lerRecolhidos(),
       agora: Date.now(), // relogio dos cartoes que estao subindo
+
+      // ---- foco ----
+      aba: lerAba(),
+      foco: { tarefas: [], estacoes: [] },
+      nova: NOVA_TAREFA(),
+      tarefasUI: { filtro: "hoje", dia: "", mes: isoDia(new Date()).slice(0, 7), editando: "", edicao: null, erro: "" },
+      novaEstacao: { aberta: false, url: "", nome: "", salvando: false, erro: "" },
+      player: {
+        estacao: lerPrefsFoco().estacao || "",
+        volume: Number.isFinite(lerPrefsFoco().volume) ? lerPrefsFoco().volume : 60,
+        tocando: false, iniciado: false, carregando: false, pronto: false, carregadaId: "", titulo: "", erro: "",
+      },
+      sons: { chuva: 0, ruido: 0, vinil: 0 },
+      pomodoro: { modo: "foco", rodando: false, comecada: false, fim: 0, ciclos: 0, ...prefsPomodoro() },
+      relogio: Date.now(), // relogio de minuto do foco
+      opcoesLembrete: OPCOES_LEMBRETE,
+      filtrosTarefa: FILTROS_TAREFA,
+      modosPomodoro: MODOS_POMODORO,
+      listaSons: LISTA_SONS,
+      diasDaSemana: SEMANA_CURTA,
     };
   },
 
   computed: {
+    // ---- foco ----
+    hojeIso() {
+      return isoDia(new Date(this.relogio));
+    },
+    horaMinuto() {
+      const d = new Date(this.relogio);
+      return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+    },
+    horaAgora() {
+      const d = new Date(this.relogio);
+      return `${SEMANA_CURTA[d.getDay()]}, ${d.getDate()} de ${MESES[d.getMonth()]} · ${this.horaMinuto}`;
+    },
+    estacaoAtual() {
+      const lista = this.foco.estacoes;
+      return lista.find((e) => e.id === this.player.estacao) || lista[0] || null;
+    },
+    tarefaEmFoco() {
+      return this.foco.tarefas.find((t) => t.status === "fazendo") || null;
+    },
+    contagemTarefas() {
+      const c = { hoje: 0, atrasadas: 0, proximas: 0, todas: 0, feitas: 0 };
+      for (const t of this.foco.tarefas) {
+        if (t.status === "feito") { c.feitas++; continue; }
+        c.todas++;
+        if (this.ehDeHoje(t)) c.hoje++;
+        if (this.classePrazo(t) === "atrasada") c.atrasadas++;
+        if (t.data && t.data > this.hojeIso) c.proximas++;
+      }
+      return c;
+    },
+    tarefasVisiveis() {
+      const ts = this.foco.tarefas;
+      const abertas = ts.filter((t) => t.status !== "feito");
+      switch (this.tarefasUI.filtro) {
+        case "hoje":
+          // "fazendo" primeiro: e o que esta na mao agora.
+          return abertas.filter(this.ehDeHoje).sort((a, b) =>
+            (a.status === "fazendo" ? 0 : 1) - (b.status === "fazendo" ? 0 : 1) || porPrazo(a, b));
+        case "proximas":
+          return abertas.filter((t) => t.data && t.data > this.hojeIso).sort(porPrazo);
+        case "todas":
+          return abertas.slice().sort(porPrazo);
+        case "feitas":
+          return ts.filter((t) => t.status === "feito")
+            .sort((a, b) => String(b.concluida || "").localeCompare(String(a.concluida || "")));
+        case "dia":
+          return ts.filter((t) => t.data === this.tarefasUI.dia).sort((a, b) =>
+            (a.status === "feito" ? 1 : 0) - (b.status === "feito" ? 1 : 0) || porPrazo(a, b));
+      }
+      return [];
+    },
+    textoSemTarefa() {
+      switch (this.tarefasUI.filtro) {
+        case "hoje": return "nada para hoje. respira, ou adicione algo acima.";
+        case "proximas": return "nenhuma tarefa com data daqui para frente.";
+        case "todas": return "nenhuma tarefa aberta.";
+        case "feitas": return "nada concluido ainda.";
+      }
+      return "nenhuma tarefa neste dia - a de cima entra nele.";
+    },
+    tituloMes() {
+      const [a, m] = this.tarefasUI.mes.split("-").map(Number);
+      return `${MESES[m - 1]} ${a}`;
+    },
+    // Grade do mes comecando no domingo, com os dias de fora para completar as semanas.
+    semanasDoMes() {
+      const [a, m] = this.tarefasUI.mes.split("-").map(Number);
+      const primeiro = new Date(a, m - 1, 1);
+      const porDia = {};
+      for (const t of this.foco.tarefas) if (t.data) (porDia[t.data] ||= []).push(t);
+      const semanas = [];
+      for (let w = 0; w < 6; w++) {
+        const semana = [];
+        for (let d = 0; d < 7; d++) {
+          const dia = new Date(a, m - 1, 1 - primeiro.getDay() + w * 7 + d);
+          const iso = isoDia(dia);
+          const tarefas = (porDia[iso] || []).slice().sort((x, y) =>
+            (x.status === "feito" ? 1 : 0) - (y.status === "feito" ? 1 : 0) || porPrazo(x, y));
+          semana.push({ iso, dia: dia.getDate(), fora: dia.getMonth() !== m - 1, hoje: iso === this.hojeIso, passado: iso < this.hojeIso, tarefas });
+        }
+        // A sexta semana so entra quando o mes chega nela.
+        if (w === 5 && semana.every((x) => x.fora)) break;
+        semanas.push(semana);
+      }
+      return semanas;
+    },
+
     selecionados() {
       return this.config.servicos.filter((s) => s.selecionado).map((s) => s.id);
     },
@@ -325,6 +684,8 @@ createApp({
     this.atualizarDocker();
     this.atualizarGit(false);
     this.conectarEventos();
+    pomoVivo.total = pomoVivo.restante = this.duracaoFase(this.pomodoro.modo);
+    this.iniciarFoco();
     document.addEventListener("keydown", (ev) => {
       if (ev.key === "Escape" && this.modais.length) return this.fecharTopo();
       // "/" pula para o filtro, como em qualquer lista grande - menos quando ja se esta
@@ -332,7 +693,8 @@ createApp({
       const digitando = /^(INPUT|TEXTAREA|SELECT)$/.test(ev.target.tagName);
       if (ev.key === "/" && !digitando && !this.modais.length) {
         ev.preventDefault();
-        this.$refs.busca?.focus();
+        // Na area foco o atalho vai para a nova tarefa.
+        (this.aba === "foco" ? this.$refs.novaTarefa : this.$refs.busca)?.focus();
       }
     });
     // O relogio so anda enquanto ha algo subindo: e ele que move o tempo e o pavio dos
@@ -1841,6 +2203,12 @@ createApp({
           this.git = evento.git;
           this.buscandoGit = false;
           this.sincronizarPainelGit(evento.git);
+        } else if (evento.tipo === "foco") {
+          this.foco = evento.foco;
+        } else if (evento.tipo === "lembrete") {
+          // A notificacao do Windows sai pelo launcher; aqui e o eco na tela, com o sino.
+          tocarSino();
+          this.avisar(`lembrete: ${evento.tarefa.titulo} - ${evento.texto}`, "lembrete");
         } else if (evento.tipo === "aviso") {
           this.avisar(evento.texto, evento.erro ? "erro" : "");
         } else if (evento.tipo === "fim") {
@@ -1885,6 +2253,391 @@ createApp({
     },
 
     // ------------------------------------------------------------------
+    // foco: area, player, sons, pomodoro, tarefas e agenda
+    // ------------------------------------------------------------------
+    async iniciarFoco() {
+      try {
+        this.foco = await this.pedir("/api/foco");
+      } catch (err) {
+        this.avisar("nao consegui ler as tarefas: " + err.message, "erro");
+      }
+      if (this.aba === "foco") this.prepararPlayer(false);
+      // A notificacao abre /#foco: com a pagina ja aberta, o hash muda e a area acompanha.
+      window.addEventListener("hashchange", () => {
+        const aba = lerAba();
+        if (aba !== this.aba) this.trocarArea(aba);
+      });
+      // Relogio de minuto: hora do topo, "hoje" e "atrasada". Fica em 15s de proposito -
+      // a tela e um componente so, e mexer nele a cada segundo redesenharia tudo.
+      setInterval(() => { this.relogio = Date.now(); }, 15000);
+      // O segundo a segundo do pomodoro mexe so no <pomo-tempo>.
+      setInterval(() => this.tickPomodoro(), 1000);
+    },
+    trocarArea(aba) {
+      this.aba = aba;
+      gravarPrefsFoco({ aba });
+      history.replaceState(null, "", aba === "foco" ? "#foco" : location.pathname + location.search);
+      if (aba === "foco") {
+        this.relogio = Date.now();
+        this.prepararPlayer(false);
+      }
+    },
+
+    // ---- player do YouTube ----
+    async prepararPlayer(tocar) {
+      if (tocar) midia.querTocar = true;
+      if (midia.yt) {
+        if (tocar && this.player.pronto) midia.yt.playVideo();
+        return;
+      }
+      const e = this.estacaoAtual;
+      if (!e || this.player.carregando) return;
+      this.player.carregando = true;
+      this.player.erro = "";
+      try {
+        await carregarApiYouTube();
+      } catch (err) {
+        this.player.erro = err.message;
+        this.player.carregando = false;
+        return;
+      }
+      if (midia.yt) return;
+      // O YT.Player troca o elemento por um iframe: o alvo e um div criado aqui, dentro de
+      // um container que o template deixa vazio.
+      const alvo = document.createElement("div");
+      this.$refs.yt.appendChild(alvo);
+      const vars = { rel: 0, playsinline: 1, modestbranding: 1, origin: location.origin };
+      if (e.lista) Object.assign(vars, { listType: "playlist", list: e.lista });
+      this.player.carregadaId = e.id;
+      midia.yt = new YT.Player(alvo, {
+        width: "100%",
+        height: "100%",
+        videoId: e.video || undefined,
+        playerVars: vars,
+        events: {
+          onReady: (ev) => {
+            this.player.pronto = true;
+            this.player.carregando = false;
+            ev.target.setVolume(this.player.volume);
+            // Trocaram de estacao enquanto o player carregava: vai a mais nova.
+            const atual = this.estacaoAtual;
+            if (atual && atual.id !== this.player.carregadaId) this.carregarNoPlayer(atual, midia.querTocar);
+            else if (midia.querTocar) ev.target.playVideo();
+          },
+          onStateChange: (ev) => this.aoMudarPlayer(ev),
+          onError: (ev) => {
+            this.player.erro = ERROS_YT[ev.data] || `o player do YouTube deu erro ${ev.data}.`;
+            this.player.tocando = false;
+            this.player.carregando = false;
+          },
+        },
+      });
+    },
+    aoMudarPlayer(ev) {
+      const E = YT.PlayerState;
+      this.player.carregando = false;
+      if (ev.data === E.PLAYING) {
+        this.player.tocando = true;
+        this.player.iniciado = true;
+        this.player.erro = "";
+        midia.querTocar = false;
+        const dados = ev.target.getVideoData && ev.target.getVideoData();
+        if (dados && dados.title) this.player.titulo = dados.title;
+      } else if (ev.data === E.BUFFERING) {
+        this.player.iniciado = true;
+      } else if (ev.data === E.PAUSED || ev.data === E.ENDED) {
+        this.player.tocando = false;
+      }
+    },
+    carregarNoPlayer(e, tocar) {
+      this.player.carregadaId = e.id;
+      this.player.titulo = "";
+      this.player.erro = "";
+      // load* ja comeca tocando; cue* so prepara.
+      if (e.lista) {
+        const opcoes = { list: e.lista, listType: "playlist", index: 0 };
+        tocar ? midia.yt.loadPlaylist(opcoes) : midia.yt.cuePlaylist(opcoes);
+      } else {
+        tocar ? midia.yt.loadVideoById(e.video) : midia.yt.cueVideoById(e.video);
+      }
+    },
+    tocarEstacao(e) {
+      if (!e) return;
+      this.player.estacao = e.id;
+      gravarPrefsFoco({ estacao: e.id });
+      garantirAudio(); // aproveita o clique para destravar o audio do sino
+      if (!midia.yt || !this.player.pronto) return this.prepararPlayer(true);
+      if (e.id !== this.player.carregadaId) this.carregarNoPlayer(e, true);
+      else midia.yt.playVideo();
+    },
+    alternarPlay() {
+      if (!midia.yt || !this.player.pronto) return this.tocarEstacao(this.estacaoAtual);
+      if (this.player.tocando) midia.yt.pauseVideo();
+      else this.tocarEstacao(this.estacaoAtual);
+    },
+    mudarVolume(v) {
+      this.player.volume = v;
+      gravarPrefsFoco({ volume: v });
+      if (midia.yt && this.player.pronto) {
+        midia.yt.setVolume(v);
+        if (v > 0) midia.yt.unMute();
+      }
+    },
+    abrirNovaEstacao() {
+      Object.assign(this.novaEstacao, { aberta: true, url: "", nome: "", erro: "" });
+      this.$nextTick(() => this.$refs.linkEstacao?.focus());
+    },
+    async adicionarEstacao() {
+      const n = this.novaEstacao;
+      n.salvando = true;
+      n.erro = "";
+      try {
+        const r = await this.enviar("/api/foco/estacoes", { url: n.url.trim(), nome: n.nome.trim() });
+        this.foco = r.foco;
+        n.aberta = false;
+        const nova = this.foco.estacoes.find((e) => e.id === r.id);
+        if (nova) this.tocarEstacao(nova);
+      } catch (err) {
+        n.erro = err.message;
+      } finally {
+        n.salvando = false;
+      }
+    },
+    async removerEstacao(e) {
+      if (!(await this.confirmar(`Tirar "${e.nome}" da lista de estacoes?`, { botao: "tirar" }))) return;
+      try {
+        this.foco = (await this.enviar(`/api/foco/estacoes/${encodeURIComponent(e.id)}`, undefined, "DELETE")).foco;
+      } catch (err) {
+        this.avisar(err.message, "erro");
+      }
+    },
+
+    // ---- sons ambiente ----
+    mudarSom(id, valor) {
+      this.sons[id] = valor;
+      if (!midia.sons[id]) {
+        if (valor === 0) return;
+        midia.sons[id] = montarSom(id);
+        if (!midia.sons[id]) return this.avisar("este navegador nao tem WebAudio", "erro");
+      }
+      const v = valor / 100;
+      midia.sons[id].ganho.gain.setTargetAtTime(v * v * FATOR_SOM[id], midia.audio.currentTime, 0.08);
+    },
+
+    // ---- pomodoro ----
+    duracaoFase(modo) {
+      const p = this.pomodoro;
+      return 60 * (modo === "foco" ? p.minFoco : modo === "pausa" ? p.minPausa : p.minLonga);
+    },
+    alternarPomodoro() {
+      const p = this.pomodoro;
+      garantirAudio(); // o sino do fim da fase precisa do audio destravado por um clique
+      if (p.rodando) {
+        p.rodando = false;
+        pomoVivo.restante = Math.max(0, Math.round((p.fim - Date.now()) / 1000));
+        document.title = TITULO_PAGINA;
+        return;
+      }
+      p.fim = Date.now() + pomoVivo.restante * 1000;
+      p.rodando = true;
+      p.comecada = true;
+    },
+    zerarPomodoro() {
+      const p = this.pomodoro;
+      p.rodando = false;
+      p.comecada = false;
+      pomoVivo.total = pomoVivo.restante = this.duracaoFase(p.modo);
+      document.title = TITULO_PAGINA;
+    },
+    escolherFase(modo) {
+      this.pomodoro.modo = modo;
+      this.zerarPomodoro();
+    },
+    tickPomodoro() {
+      const p = this.pomodoro;
+      if (!p.rodando) return;
+      const r = Math.max(0, Math.round((p.fim - Date.now()) / 1000));
+      pomoVivo.restante = r;
+      const fase = MODOS_POMODORO.find((m) => m.id === p.modo).rotulo;
+      document.title = `${mmss(r)} · ${fase} · ${TITULO_PAGINA}`;
+      if (r === 0) this.concluirFase(true);
+    },
+    // natural = o tempo acabou (pular nao conta foco nem notifica).
+    concluirFase(natural) {
+      const p = this.pomodoro;
+      const eraFoco = p.modo === "foco";
+      if (eraFoco && natural) p.ciclos++;
+      const proxima = !eraFoco ? "foco" : (natural && p.ciclos % 4 === 0 ? "longa" : "pausa");
+      if (natural) {
+        const titulo = eraFoco ? "foco concluido" : "fim da pausa";
+        const texto = eraFoco
+          ? `hora da ${proxima === "longa" ? "pausa longa" : "pausa"} (${this.duracaoFase(proxima) / 60} min)`
+          : "bora voltar" + (this.tarefaEmFoco ? ": " + this.tarefaEmFoco.titulo : "");
+        tocarSino();
+        this.avisar(`${titulo} - ${texto}`, "ok");
+        this.enviar("/api/foco/notificar", { titulo, texto }).catch(() => {});
+      }
+      p.modo = proxima;
+      this.zerarPomodoro();
+      if (natural && p.emendar) this.alternarPomodoro();
+    },
+    salvarPrefsPomodoro() {
+      const p = this.pomodoro;
+      const limitar = (v, padrao, max) => (Number.isFinite(v) ? Math.min(max, Math.max(1, Math.round(v))) : padrao);
+      p.minFoco = limitar(p.minFoco, 25, 180);
+      p.minPausa = limitar(p.minPausa, 5, 60);
+      p.minLonga = limitar(p.minLonga, 15, 90);
+      gravarPrefsFoco({ pomodoro: { minFoco: p.minFoco, minPausa: p.minPausa, minLonga: p.minLonga, emendar: p.emendar } });
+      if (!p.comecada) this.zerarPomodoro();
+    },
+    async testarNotificacao() {
+      try {
+        await this.enviar("/api/foco/notificar", { titulo: "dev launcher", texto: "as notificacoes estao chegando." });
+        this.avisar("notificacao enviada. se nao apareceu, confira em Configuracoes > Sistema > Notificacoes se o Windows PowerShell pode notificar.", "ok");
+      } catch (err) {
+        this.avisar("notificacao do sistema falhou: " + err.message, "erro");
+      }
+    },
+
+    // ---- tarefas ----
+    ehDeHoje(t) {
+      if (t.status === "feito") return false;
+      return t.status === "fazendo" || (!!t.data && t.data <= this.hojeIso);
+    },
+    temLembrete(t) {
+      return t.lembrete !== undefined && t.lembrete !== null;
+    },
+    rotuloLembrete(t) {
+      const o = OPCOES_LEMBRETE.find((x) => x.valor === t.lembrete);
+      return o ? o.rotulo.replace("avisar ", "") : `${t.lembrete} min antes`;
+    },
+    classePrazo(t) {
+      if (t.status === "feito" || !t.data) return "";
+      if (t.data < this.hojeIso) return "atrasada";
+      if (t.data === this.hojeIso) return t.hora && t.hora < this.horaMinuto ? "atrasada" : "hoje";
+      return "";
+    },
+    rotuloPrazo(t) {
+      const dif = diasEntre(this.hojeIso, t.data);
+      let dia;
+      if (dif === 0) dia = "hoje";
+      else if (dif === 1) dia = "amanha";
+      else if (dif === -1) dia = "ontem";
+      else {
+        const d = dataDoIso(t.data);
+        dia = `${String(d.getDate()).padStart(2, "0")}/${String(d.getMonth() + 1).padStart(2, "0")}`;
+        if (d.getFullYear() !== new Date(this.relogio).getFullYear()) dia += "/" + d.getFullYear();
+        if (dif > 1 && dif < 7) dia = SEMANA_CURTA[d.getDay()] + " " + dia;
+      }
+      return t.hora ? `${dia} · ${t.hora}` : dia;
+    },
+    rotuloDiaLongo(iso) {
+      if (!iso) return "";
+      const d = dataDoIso(iso);
+      return `${SEMANA_CURTA[d.getDay()]}, ${d.getDate()} de ${MESES[d.getMonth()]}`;
+    },
+    filtrarTarefas(filtro) {
+      if (this.tarefasUI.filtro === "dia" && this.nova.data === this.tarefasUI.dia) this.nova.data = "";
+      this.tarefasUI.filtro = filtro;
+      this.tarefasUI.editando = "";
+    },
+    escolherDia(iso) {
+      const ui = this.tarefasUI;
+      if (ui.filtro === "dia" && ui.dia === iso) return this.filtrarTarefas("hoje");
+      ui.filtro = "dia";
+      ui.dia = iso;
+      ui.editando = "";
+      ui.mes = iso.slice(0, 7);
+      this.nova.data = iso;
+      this.$nextTick(() => this.$refs.novaTarefa?.focus());
+    },
+    mudarMes(delta) {
+      const [a, m] = this.tarefasUI.mes.split("-").map(Number);
+      this.tarefasUI.mes = isoDia(new Date(a, m - 1 + delta, 1)).slice(0, 7);
+    },
+    irParaHoje() {
+      this.relogio = Date.now();
+      this.tarefasUI.mes = this.hojeIso.slice(0, 7);
+      this.filtrarTarefas("hoje");
+    },
+    async adicionarTarefa() {
+      const n = this.nova;
+      const titulo = n.titulo.trim();
+      if (!titulo) return;
+      const corpo = { titulo, data: n.data, hora: n.data ? n.hora : "", lembrete: n.data ? n.lembrete : null };
+      // Na visao "hoje", tarefa sem dia e de hoje - senao ela some da lista assim que entra.
+      // Sem hora e sem aviso: um lembrete das 9h que ja passou dispararia na hora.
+      if (!corpo.data && this.tarefasUI.filtro === "hoje") Object.assign(corpo, { data: this.hojeIso, lembrete: null });
+      try {
+        const r = await this.enviar("/api/foco/tarefas", corpo);
+        this.foco = r.foco;
+        this.nova = { ...NOVA_TAREFA(), data: this.tarefasUI.filtro === "dia" ? this.tarefasUI.dia : "", lembrete: n.lembrete };
+        if (!this.tarefasVisiveis.some((t) => t.id === r.id)) {
+          this.avisar(`"${titulo}" entrou em ${corpo.data ? this.rotuloDiaLongo(corpo.data) : "abertas (sem data)"}`, "ok");
+        }
+      } catch (err) {
+        this.avisar(err.message, "erro");
+      }
+      this.$refs.novaTarefa?.focus();
+    },
+    async mudarStatusTarefa(t, status) {
+      const antes = t.status;
+      t.status = status; // responde na hora; o retrato do launcher chega logo atras
+      try {
+        this.foco = (await this.enviar(`/api/foco/tarefas/${encodeURIComponent(t.id)}/status`, { status })).foco;
+      } catch (err) {
+        t.status = antes;
+        this.avisar(err.message, "erro");
+      }
+    },
+    alternarFeito(t) {
+      this.mudarStatusTarefa(t, t.status === "feito" ? "afazer" : "feito");
+    },
+    alternarFazendo(t) {
+      this.mudarStatusTarefa(t, t.status === "fazendo" ? "afazer" : "fazendo");
+    },
+    editarTarefa(t) {
+      this.tarefasUI.editando = t.id;
+      this.tarefasUI.erro = "";
+      this.tarefasUI.edicao = {
+        id: t.id, titulo: t.titulo, notas: t.notas || "", status: t.status,
+        data: t.data || "", hora: t.hora || "", prioridade: t.prioridade || "",
+        lembrete: this.temLembrete(t) ? t.lembrete : null,
+      };
+      this.$nextTick(() => {
+        const el = this.$refs.edicaoTitulo;
+        (Array.isArray(el) ? el[0] : el)?.focus();
+      });
+    },
+    async salvarTarefaEditada() {
+      const e = this.tarefasUI.edicao;
+      const corpo = { ...e, hora: e.data ? e.hora : "", lembrete: e.data ? e.lembrete : null };
+      try {
+        this.foco = (await this.enviar("/api/foco/tarefas", corpo)).foco;
+        this.tarefasUI.editando = "";
+      } catch (err) {
+        this.tarefasUI.erro = err.message;
+      }
+    },
+    async apagarTarefa(t) {
+      if (!(await this.confirmar(`Apagar a tarefa "${t.titulo}"?`, { botao: "apagar" }))) return;
+      try {
+        this.foco = (await this.enviar(`/api/foco/tarefas/${encodeURIComponent(t.id)}`, undefined, "DELETE")).foco;
+      } catch (err) {
+        this.avisar(err.message, "erro");
+      }
+    },
+    async limparFeitas() {
+      const n = this.contagemTarefas.feitas;
+      if (!(await this.confirmar(`Tirar da lista as ${n} tarefa(s) concluida(s)?`, { botao: "limpar" }))) return;
+      try {
+        this.foco = (await this.enviar("/api/foco/tarefas/limpar-feitas")).foco;
+      } catch (err) {
+        this.avisar(err.message, "erro");
+      }
+    },
+
+    // ------------------------------------------------------------------
     // avisos
     // ------------------------------------------------------------------
     avisar(texto, tipo = "") {
@@ -1892,10 +2645,10 @@ createApp({
       // No maximo cinco na tela: uma subida grande nao pode cobrir os cartoes de avisos.
       this.avisos = [...this.avisos.slice(-4), { id, texto, tipo }];
       // Erro fica o dobro do tempo - e o que a pessoa precisa conseguir ler.
-      setTimeout(() => this.fecharAviso(id), tipo === "erro" ? 12000 : 5000);
+      setTimeout(() => this.fecharAviso(id), tipo === "erro" || tipo === "lembrete" ? 12000 : 5000);
     },
     fecharAviso(id) {
       this.avisos = this.avisos.filter((a) => a.id !== id);
     },
   },
-}).component("visor-diff", VisorDiff).mount("#app");
+}).component("visor-diff", VisorDiff).component("pomo-tempo", PomoTempo).mount("#app");

@@ -342,6 +342,33 @@ projeto); o **procurar** dele usa o mesmo detector para sugerir o comando. Porta
 nao bloqueia o cadastro, so avisa: os dois nao sobem juntos, e a tela diz qual deles esta
 com a porta (veja "Dois projetos na mesma porta").
 
+## Foco: lofi, pomodoro, tarefas e agenda
+
+A aba **foco** (no topo, ao lado de **projetos**) e uma area separada para trabalhar: musica,
+timer, lista de tarefas e um calendario. Trocar de aba so esconde a outra - a musica continua
+tocando, e com a aba projetos aberta aparece um mini-player no topo para pausar.
+
+- **Lofi do YouTube.** Ja vem com algumas estacoes (Lofi Girl, Chillhop). Para tocar outra,
+  **+ link do youtube** aceita video, live, playlist ou `youtu.be`; o nome vem do proprio
+  YouTube. Live muda de ID quando o canal reinicia a transmissao: se uma estacao parar de
+  tocar ("a live acabou"), tire e cole o link novo. Precisa de internet.
+- **Sons ambiente** (chuva, ruido marrom, chiado de vinil) gerados no navegador - funcionam
+  offline e misturam com a musica.
+- **Pomodoro** com foco/pausa/pausa longa (a cada 4 focos), tempos ajustaveis e opcao de
+  emendar as fases. A tarefa marcada como **fazendo** (▶) aparece no timer.
+- **Tarefas** com dia, hora, prioridade, notas e **lembrete**. Filtros: hoje (inclui
+  atrasadas e o que esta "fazendo"), proximas, abertas, feitas. Clicar num dia do calendario
+  mostra as tarefas dele e a proxima tarefa criada ja entra naquele dia.
+- **Notificacao do Windows.** O lembrete sai do proprio launcher (Windows PowerShell + toast
+  nativo), entao chega mesmo com a aba do navegador fechada - basta o launcher estar no ar.
+  O aviso fica na tela ate ser dispensado, e clicar nele abre o foco. Tarefa com dia e sem
+  hora conta a partir das 9h. Lembrete que venceu com o launcher desligado ha mais de 6h nao
+  vira notificacao (so aparece como atrasada). **testar notificacao** confere se o Windows
+  esta deixando o PowerShell notificar (Configuracoes > Sistema > Notificacoes).
+
+Tarefas e estacoes ficam em `foco.json`, ao lado do `config.json` e tambem fora do Git.
+Volume, estacao escolhida e tempos do pomodoro sao preferencia do navegador.
+
 ## Modos de execucao (servicos `app`)
 
 | Modo | O que faz |
@@ -445,6 +472,12 @@ Config da primeira versao (sem `grupos`/`perfis`) e migrado sozinho ao abrir.
 | POST/DELETE | `/api/grupos` · `/api/grupos/ordem` · `/api/grupos/{id}` | grupos |
 | POST/DELETE | `/api/perfis` · `/api/perfis/{id}/aplicar` · `/api/perfis/{id}` | perfis (`todos/aplicar` volta para o TODOS) |
 | GET | `/api/descobrir?caminho=...` | projetos encontrados na pasta e subpastas, com comando e porta sugeridos |
+| GET | `/api/foco` | tarefas e estacoes da aba foco |
+| POST | `/api/foco/tarefas` | cria ou atualiza (`id` vazio cria): `titulo`, `notas`, `status`, `prioridade`, `data`, `hora`, `lembrete` (min antes) |
+| POST | `/api/foco/tarefas/{id}/status` | `{"status": "afazer\|fazendo\|feito"}` |
+| DELETE | `/api/foco/tarefas/{id}` · POST `/api/foco/tarefas/limpar-feitas` | apaga uma / todas as concluidas |
+| POST/DELETE | `/api/foco/estacoes` · `/api/foco/estacoes/{id}` | `{"url", "nome"}` - link do YouTube |
+| POST | `/api/foco/notificar` | `{"titulo", "texto"}` - notificacao do Windows (pomodoro, teste) |
 | GET/POST | `/api/servicos/{id}/subprojetos` | lista o que da para subir de dentro da pasta do projeto / ativa um (`{"entrada", "esperar"}`) |
 | POST | `/api/importar` | `{"grupo", "grupo_novo", "perfil", "esperar_containers", "projetos": [...]}` - cadastra todos ou nenhum |
 | GET | `/api/pastas` · `/api/inspecionar` | seletor de pastas e sugestoes (`?livre=1` sai da cerca) |

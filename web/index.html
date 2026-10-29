@@ -31,6 +31,28 @@
       </div>
     </div>
 
+    <!-- Duas areas: os projetos (o launcher de sempre) e o foco (lofi, tarefas e agenda).
+         Trocar de area so esconde a outra: a musica e o log continuam vivos. -->
+    <nav class="areas" role="tablist" aria-label="areas do launcher">
+      <button type="button" role="tab" class="area" :aria-selected="aba === 'projetos' ? 'true' : 'false'" @click="trocarArea('projetos')">projetos</button>
+      <button type="button" role="tab" class="area" :aria-selected="aba === 'foco' ? 'true' : 'false'" @click="trocarArea('foco')">
+        foco
+        <span v-if="contagemTarefas.hoje" class="selo-area" :class="{ atrasada: contagemTarefas.atrasadas }"
+              :title="contagemTarefas.atrasadas ? contagemTarefas.atrasadas + ' atrasada(s)' : 'para hoje'">{{ contagemTarefas.hoje }}</span>
+      </button>
+    </nav>
+
+    <!-- Tocando alguma coisa e olhando os projetos: um controle pequeno para pausar sem
+         trocar de area. -->
+    <div v-if="aba === 'projetos' && (player.tocando || pomodoro.rodando)" class="mini-player">
+      <button v-if="player.tocando" type="button" class="mini-play" title="pausar a musica" aria-label="pausar a musica" @click="alternarPlay">❚❚</button>
+      <button type="button" class="mini-info" title="abrir o foco" @click="trocarArea('foco')">
+        <span v-if="pomodoro.rodando" class="mini-pomo" :class="pomodoro.modo"><pomo-tempo></pomo-tempo></span>
+        <span v-if="player.tocando" class="mini-nome">♪ {{ player.titulo || (estacaoAtual && estacaoAtual.nome) }}</span>
+      </button>
+    </div>
+
+    <template v-if="aba === 'projetos'">
     <!-- Os contadores tambem filtram: clicar em "falha" deixa na tela so o que quebrou. -->
     <div class="medidores" role="group" aria-label="filtrar por estado">
       <button type="button" class="medidor pronto" :aria-pressed="filtroStatus === 'pronto'"
@@ -56,9 +78,14 @@
         <span class="contador">{{ plano.ids ? plano.ids.length : selecionados.length }}</span>
       </button>
     </div>
+    </template>
+    <div v-else class="acoes-topo">
+      <span class="relogio-topo">{{ horaAgora }}</span>
+      <button class="botao discreto" type="button" title="encerra o proprio launcher" @click="encerrarLauncher">encerrar</button>
+    </div>
   </header>
 
-  <nav class="barra-perfis">
+  <nav class="barra-perfis" v-show="aba === 'projetos'">
     <span class="rotulo-barra">perfis</span>
     <!-- Perfil e uma visao: clicar mostra so os projetos dele (ja marcados). TODOS mostra
          tudo que esta cadastrado. -->
@@ -93,7 +120,7 @@
     </div>
   </nav>
 
-  <main>
+  <main v-show="aba === 'projetos'">
     <section class="coluna">
       <div v-if="raiz && !config.servicos.length && !config.grupos.length" class="sem-resultado">
         <p>nenhum projeto cadastrado ainda. escolha uma pasta e o launcher descobre os projetos e como rodar cada um.</p>
@@ -378,6 +405,219 @@
         <pre class="log" ref="log" tabindex="0"></pre>
       </section>
     </aside>
+  </main>
+
+  <!-- ---------------- foco: lofi, pomodoro, tarefas e agenda ---------------- -->
+  <main class="foco" v-show="aba === 'foco'">
+    <section class="foco-coluna">
+      <section class="painel ambiente">
+        <div class="tela-lofi" :class="{ ligada: player.iniciado }">
+          <!-- O player do YouTube entra aqui por fora do Vue: este div nao tem filhos no
+               template de proposito, para o Vue nunca mexer no iframe. -->
+          <div class="yt" ref="yt"></div>
+          <div v-if="!player.iniciado" class="cena" aria-hidden="true">
+            <div class="cena-lua"></div>
+            <div class="cena-predios"><i></i><i></i><i></i><i></i><i></i><i></i></div>
+            <div class="cena-chuva"></div>
+          </div>
+          <button v-if="!player.iniciado" type="button" class="tocar-grande" :disabled="!estacaoAtual || player.carregando"
+                  @click="tocarEstacao(estacaoAtual)">
+            <span class="icone-play" aria-hidden="true">▶</span>
+            <span>{{ player.carregando ? 'carregando...' : (estacaoAtual ? estacaoAtual.nome : 'adicione uma estacao abaixo') }}</span>
+          </button>
+        </div>
+
+        <div class="controles-lofi">
+          <button type="button" class="play" :disabled="!estacaoAtual" :aria-label="player.tocando ? 'pausar' : 'tocar'" @click="alternarPlay">
+            {{ player.tocando ? '❚❚' : '▶' }}
+          </button>
+          <div class="tocando">
+            <b>{{ player.titulo || (estacaoAtual ? estacaoAtual.nome : 'nenhuma estacao') }}</b>
+            <span>{{ player.tocando ? 'tocando' : (player.iniciado ? 'pausado' : 'lofi do youtube') }}</span>
+          </div>
+          <label class="volume" title="volume da musica">
+            <span aria-hidden="true">vol</span>
+            <input type="range" min="0" max="100" :value="player.volume" aria-label="volume da musica" @input="mudarVolume(+$event.target.value)">
+          </label>
+        </div>
+        <p v-if="player.erro" class="erro-lofi">{{ player.erro }}</p>
+
+        <div class="estacoes">
+          <div v-for="e in foco.estacoes" :key="e.id" class="estacao" :class="{ ativa: estacaoAtual && e.id === estacaoAtual.id }">
+            <button type="button" class="nome-estacao" :title="e.url" @click="tocarEstacao(e)">
+              <span v-if="estacaoAtual && e.id === estacaoAtual.id && player.tocando" class="ondas" aria-hidden="true"><i></i><i></i><i></i></span>
+              {{ e.nome }}
+            </button>
+            <button type="button" class="tirar" :aria-label="'tirar ' + e.nome" title="tirar da lista" @click="removerEstacao(e)">×</button>
+          </div>
+          <button v-if="!novaEstacao.aberta" type="button" class="nova-estacao" @click="abrirNovaEstacao">+ link do youtube</button>
+        </div>
+        <form v-if="novaEstacao.aberta" class="form-estacao" @submit.prevent="adicionarEstacao">
+          <input type="text" ref="linkEstacao" v-model="novaEstacao.url" placeholder="cole o link: video, live ou playlist" aria-label="link do youtube"
+                 @keydown.esc.stop="novaEstacao.aberta = false">
+          <input type="text" v-model="novaEstacao.nome" placeholder="nome (opcional)" aria-label="nome da estacao" class="curto">
+          <button type="submit" class="mini destaque" :disabled="novaEstacao.salvando || !novaEstacao.url.trim()">{{ novaEstacao.salvando ? 'lendo...' : 'adicionar' }}</button>
+          <button type="button" class="mini" @click="novaEstacao.aberta = false">cancelar</button>
+          <p v-if="novaEstacao.erro" class="erro-lofi">{{ novaEstacao.erro }}</p>
+        </form>
+      </section>
+
+      <div class="foco-dupla">
+        <section class="painel pomodoro" :class="[pomodoro.modo, { rodando: pomodoro.rodando }]">
+          <header class="painel-topo">
+            <h2>pomodoro</h2>
+            <span class="dica">{{ pomodoro.ciclos }} {{ pomodoro.ciclos === 1 ? 'foco concluido' : 'focos concluidos' }}</span>
+          </header>
+          <div class="pomo-corpo">
+            <div class="pomo-modos" role="group" aria-label="fase do pomodoro">
+              <button v-for="m in modosPomodoro" :key="m.id" type="button" :aria-pressed="pomodoro.modo === m.id ? 'true' : 'false'"
+                      @click="escolherFase(m.id)">{{ m.rotulo }}</button>
+            </div>
+            <pomo-tempo anel></pomo-tempo>
+            <p v-if="tarefaEmFoco" class="pomo-tarefa">focando em <b>{{ tarefaEmFoco.titulo }}</b></p>
+            <p v-else class="pomo-tarefa fraco">marque uma tarefa como "fazendo" (▶) para ela aparecer aqui</p>
+            <div class="pomo-acoes">
+              <button type="button" class="botao primario" @click="alternarPomodoro">{{ pomodoro.rodando ? 'pausar' : (pomodoro.comecada ? 'continuar' : 'comecar') }}</button>
+              <button type="button" class="botao" @click="zerarPomodoro">zerar</button>
+              <button type="button" class="botao" title="encerra a fase agora e vai para a proxima" @click="concluirFase(false)">pular</button>
+            </div>
+            <details class="pomo-ajustes">
+              <summary>ajustes</summary>
+              <div class="pomo-campos">
+                <label>foco <input type="number" min="1" max="180" v-model.number="pomodoro.minFoco" @change="salvarPrefsPomodoro"> min</label>
+                <label>pausa <input type="number" min="1" max="60" v-model.number="pomodoro.minPausa" @change="salvarPrefsPomodoro"> min</label>
+                <label>pausa longa <input type="number" min="1" max="90" v-model.number="pomodoro.minLonga" @change="salvarPrefsPomodoro"> min</label>
+                <label class="marcar"><input type="checkbox" v-model="pomodoro.emendar" @change="salvarPrefsPomodoro"> emendar as fases</label>
+              </div>
+            </details>
+          </div>
+        </section>
+
+        <section class="painel sons">
+          <header class="painel-topo">
+            <h2>sons ambiente</h2>
+            <span class="dica">funciona offline</span>
+          </header>
+          <div class="sons-corpo">
+            <label v-for="s in listaSons" :key="s.id" class="som" :class="{ ligado: sons[s.id] > 0 }">
+              <span class="som-nome">{{ s.nome }}</span>
+              <input type="range" min="0" max="100" :value="sons[s.id]" :aria-label="'volume de ' + s.nome" @input="mudarSom(s.id, +$event.target.value)">
+            </label>
+            <button type="button" class="mini teste-aviso" @click="testarNotificacao" title="manda uma notificacao do Windows para conferir se elas estao chegando">testar notificacao</button>
+          </div>
+        </section>
+      </div>
+    </section>
+
+    <section class="foco-coluna">
+      <section class="painel tarefas">
+        <header class="painel-topo">
+          <h2>tarefas</h2>
+          <nav class="filtros-tarefa" role="tablist" aria-label="filtrar tarefas">
+            <button v-for="f in filtrosTarefa" :key="f.id" type="button" role="tab"
+                    :aria-selected="tarefasUI.filtro === f.id ? 'true' : 'false'" @click="filtrarTarefas(f.id)">
+              {{ f.rotulo }} <span class="qtd" :class="{ atrasada: f.id === 'hoje' && contagemTarefas.atrasadas }">{{ contagemTarefas[f.id] }}</span>
+            </button>
+            <button v-if="tarefasUI.filtro === 'dia'" type="button" role="tab" aria-selected="true">
+              {{ rotuloDiaLongo(tarefasUI.dia) }} <span class="qtd">{{ tarefasVisiveis.length }}</span>
+            </button>
+          </nav>
+        </header>
+
+        <form class="nova-tarefa" @submit.prevent="adicionarTarefa">
+          <input type="text" ref="novaTarefa" v-model="nova.titulo" class="titulo-nova" placeholder="o que precisa ser feito?" aria-label="nova tarefa" maxlength="200">
+          <div class="nova-detalhes">
+            <input type="date" v-model="nova.data" aria-label="dia">
+            <input type="time" v-model="nova.hora" :disabled="!nova.data" aria-label="hora">
+            <select v-model="nova.lembrete" :disabled="!nova.data" aria-label="lembrete" title="notificacao do Windows">
+              <option v-for="o in opcoesLembrete" :key="String(o.valor)" :value="o.valor">{{ o.rotulo }}</option>
+            </select>
+            <button type="submit" class="mini destaque" :disabled="!nova.titulo.trim()">adicionar</button>
+          </div>
+          <p v-if="nova.data && !nova.hora && nova.lembrete !== null" class="ajuda">sem hora, o lembrete conta a partir das 9h do dia.</p>
+        </form>
+
+        <ul class="lista-tarefas">
+          <li v-if="!tarefasVisiveis.length" class="sem-tarefa">{{ textoSemTarefa }}</li>
+          <li v-for="t in tarefasVisiveis" :key="t.id" class="tarefa"
+              :class="['p-' + (t.prioridade || 'normal'), 's-' + t.status, classePrazo(t), { editando: tarefasUI.editando === t.id }]">
+            <template v-if="tarefasUI.editando !== t.id">
+              <button type="button" class="check" :aria-pressed="t.status === 'feito' ? 'true' : 'false'"
+                      :aria-label="t.status === 'feito' ? 'reabrir ' + t.titulo : 'concluir ' + t.titulo" @click="alternarFeito(t)">
+                <span v-if="t.status === 'feito'" aria-hidden="true">✓</span>
+              </button>
+              <div class="tarefa-corpo" @dblclick="editarTarefa(t)">
+                <span class="tarefa-titulo">{{ t.titulo }}</span>
+                <span class="tarefa-meta">
+                  <span v-if="t.status === 'fazendo'" class="chip-fazendo">fazendo</span>
+                  <span v-if="t.data" class="prazo">{{ rotuloPrazo(t) }}</span>
+                  <span v-if="temLembrete(t) && t.status !== 'feito'" class="sino" :title="'notificacao do Windows ' + rotuloLembrete(t)">aviso {{ rotuloLembrete(t) }}</span>
+                  <span v-if="t.prioridade === 'alta'" class="flag">alta</span>
+                  <span v-if="t.notas" class="tem-nota" :title="t.notas">nota</span>
+                </span>
+              </div>
+              <div class="tarefa-acoes">
+                <button v-if="t.status !== 'feito'" type="button" :title="t.status === 'fazendo' ? 'voltar para a fazer' : 'marcar como fazendo'"
+                        :aria-label="t.status === 'fazendo' ? 'voltar para a fazer' : 'marcar como fazendo'" @click="alternarFazendo(t)">{{ t.status === 'fazendo' ? '■' : '▶' }}</button>
+                <button type="button" title="editar" aria-label="editar" @click="editarTarefa(t)">✎</button>
+                <button type="button" title="apagar" aria-label="apagar" class="perigo" @click="apagarTarefa(t)">×</button>
+              </div>
+            </template>
+            <form v-else class="editor-tarefa" @submit.prevent="salvarTarefaEditada" @keydown.esc.stop="tarefasUI.editando = ''">
+              <input type="text" ref="edicaoTitulo" v-model="tarefasUI.edicao.titulo" aria-label="titulo" maxlength="200">
+              <textarea v-model="tarefasUI.edicao.notas" rows="3" placeholder="notas, links, contexto..." aria-label="notas"></textarea>
+              <div class="nova-detalhes">
+                <input type="date" v-model="tarefasUI.edicao.data" aria-label="dia">
+                <input type="time" v-model="tarefasUI.edicao.hora" :disabled="!tarefasUI.edicao.data" aria-label="hora">
+                <select v-model="tarefasUI.edicao.lembrete" :disabled="!tarefasUI.edicao.data" aria-label="lembrete">
+                  <option v-for="o in opcoesLembrete" :key="String(o.valor)" :value="o.valor">{{ o.rotulo }}</option>
+                </select>
+                <select v-model="tarefasUI.edicao.prioridade" aria-label="prioridade">
+                  <option value="">prioridade normal</option>
+                  <option value="alta">prioridade alta</option>
+                  <option value="baixa">prioridade baixa</option>
+                </select>
+              </div>
+              <p v-if="tarefasUI.edicao.data && !tarefasUI.edicao.hora && tarefasUI.edicao.lembrete !== null" class="ajuda">sem hora, o lembrete conta a partir das 9h do dia.</p>
+              <p v-if="tarefasUI.erro" class="erro-lofi">{{ tarefasUI.erro }}</p>
+              <div class="editor-acoes">
+                <button type="button" class="mini" @click="tarefasUI.editando = ''">cancelar</button>
+                <button type="submit" class="mini destaque">salvar</button>
+              </div>
+            </form>
+          </li>
+        </ul>
+        <footer v-if="tarefasUI.filtro === 'feitas' && contagemTarefas.feitas" class="rodape-tarefas">
+          <button type="button" class="mini perigo" @click="limparFeitas">limpar concluidas</button>
+        </footer>
+      </section>
+
+      <section class="painel calendario">
+        <header class="painel-topo">
+          <h2>{{ tituloMes }}</h2>
+          <div class="nav-mes">
+            <button type="button" class="mini" aria-label="mes anterior" @click="mudarMes(-1)">‹</button>
+            <button type="button" class="mini" @click="irParaHoje">hoje</button>
+            <button type="button" class="mini" aria-label="proximo mes" @click="mudarMes(1)">›</button>
+          </div>
+        </header>
+        <div class="grade-mes">
+          <span v-for="d in diasDaSemana" :key="d" class="dia-semana">{{ d }}</span>
+          <template v-for="(semana, i) in semanasDoMes" :key="i">
+            <button v-for="d in semana" :key="d.iso" type="button" class="dia"
+                    :class="{ fora: d.fora, hoje: d.hoje, passado: d.passado, escolhido: tarefasUI.filtro === 'dia' && tarefasUI.dia === d.iso }"
+                    :title="d.tarefas.map((t) => (t.hora ? t.hora + ' ' : '') + t.titulo).join('\n')"
+                    :aria-label="rotuloDiaLongo(d.iso) + (d.tarefas.length ? ', ' + d.tarefas.length + ' tarefa(s)' : '')"
+                    @click="escolherDia(d.iso)">
+              <span class="num">{{ d.dia }}</span>
+              <span v-for="t in d.tarefas.slice(0, 2)" :key="t.id" class="item-dia" :class="['s-' + t.status, { atrasada: classePrazo(t) === 'atrasada' }]">{{ t.hora ? t.hora + ' ' : '' }}{{ t.titulo }}</span>
+              <span v-if="d.tarefas.length > 2" class="mais-dia">+{{ d.tarefas.length - 2 }}</span>
+            </button>
+          </template>
+        </div>
+        <p class="ajuda-cal">clique num dia para ver e criar tarefas nele. as notificacoes saem pelo Windows enquanto o launcher estiver aberto, mesmo com esta aba do navegador fechada.</p>
+      </section>
+    </section>
   </main>
 
   <div class="avisos" role="status" aria-live="polite">

@@ -81,10 +81,20 @@ func main() {
 		// (outro processo) confundiria a tela. A varredura ajusta o status em ate 4s.
 	}
 
+	// Tarefas e estacoes de lofi ficam ao lado do config, mas num arquivo proprio.
+	foco, err := NovoFoco(filepath.Join(filepath.Dir(cfgPath), "foco.json"))
+	if err != nil {
+		log.Fatalf("foco: %v", err)
+	}
+	foco.emitir = g.emitir
+	foco.urlTela = "http://" + endereco + "/#foco"
+	g.foco = foco
+
 	ctx, cancelar := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancelar()
 
 	go g.Vigiar(ctx, 4*time.Second)
+	go foco.Vigiar(ctx, 15*time.Second)
 
 	servidor := &http.Server{
 		Addr:              endereco,
@@ -350,6 +360,9 @@ func rotas(g *Gerente, raiz string, encerrar func()) http.Handler {
 
 	rotasPainelGit(mux, g)
 	rotasDescoberta(mux, g)
+	if g.foco != nil {
+		rotasFoco(mux, g.foco)
+	}
 
 	mux.HandleFunc("GET /api/docker", func(w http.ResponseWriter, r *http.Request) {
 		responderJSON(w, http.StatusOK, g.EstadoDocker(r.Context()))
